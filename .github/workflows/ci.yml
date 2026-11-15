@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   text-engine:
     runs-on: ubuntu-latest
@@ -25,22 +28,35 @@ jobs:
           python-version: "3.12"
       - run: python -c "import json; json.load(open('shared/schemas/document.schema.json', encoding='utf-8'))"
 
-  # api:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: shivammathur/setup-php@v2
-  #       with: { php-version: "8.3" }
-  #     - run: composer install --no-interaction
-  #       working-directory: apps/api
-  #     - run: php artisan test
-  #       working-directory: apps/api
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_sqlite, intl, mbstring
+          coverage: none
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: cp .env.example .env && php artisan key:generate
+      - run: vendor/bin/pint --test
+      - run: php artisan test
 
-  # web:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with: { node-version: "20" }
-  #     - run: npm ci && npm run lint && npm run test && npm run build
-  #       working-directory: apps/web
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build

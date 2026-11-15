@@ -43,3 +43,6 @@ services/text-engine/data/*.txt
 .DS_Store
 .idea/
 .vscode/
+
+# Local tooling
+.claude/
