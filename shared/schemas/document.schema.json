@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mofaregh.local/schemas/document.schema.json",
+  "title": "Mofaregh transcript document",
+  "description": "The single document model shared by the editor, the text engine, the quality checks and every exporter. Quran and hadith blocks are LOCKED: their `text` must equal the authoritative source byte for byte.",
+  "type": "object",
+  "required": ["version", "title", "settings", "segments"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "title": { "type": "string" },
+    "source_audio": {
+      "type": "object",
+      "properties": {
+        "file_name": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": ["tashkeel", "quran_script"],
+      "additionalProperties": false,
+      "properties": {
+        "tashkeel": {
+          "description": "Project diacritics policy for ordinary text. Locked blocks are always fully vowelled as in the source.",
+          "enum": ["full", "partial", "none"]
+        },
+        "quran_script": { "enum": ["uthmani", "imlaei"] },
+        "quran_reference_format": {
+          "description": "How the reference after a verse is printed. Placeholders: {surah_name} {surah} {ayah_range}",
+          "type": "string",
+          "default": "[{surah_name}: {ayah_range}]"
+        }
+      }
+    },
+    "speakers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/segment" }
+    }
+  },
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "required": ["id", "start_ms", "end_ms", "blocks"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "start_ms": { "type": "integer", "minimum": 0 },
+        "end_ms": { "type": "integer", "minimum": 0 },
+        "speaker_id": { "type": ["string", "null"] },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/text_block" },
+              { "$ref": "#/$defs/quran_block" },
+              { "$ref": "#/$defs/hadith_block" },
+              { "$ref": "#/$defs/tag_block" }
+            ]
+          }
+        }
+      }
+    },
+    "text_block": {
+      "type": "object",
+      "required": ["type", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" },
+        "auto_tashkeel_unreviewed": {
+          "description": "True while machine-suggested diacritics in this block have not been reviewed by a human.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "quran_block": {
+      "type": "object",
+      "required": ["type", "surah", "ayah_start", "ayah_end", "script", "text", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "quran" },
+        "surah": { "type": "integer", "minimum": 1, "maximum": 114 },
+        "ayah_start": { "type": "integer", "minimum": 1 },
+        "ayah_end": { "type": "integer", "minimum": 1 },
+        "word_start": {
+          "description": "1-based first word of ayah_start when only part of the verse is quoted.",
+          "type": ["integer", "null"], "minimum": 1
+        },
+        "word_end": {
+          "description": "1-based last word of ayah_end when only part of the verse is quoted.",
+          "type": ["integer", "null"], "minimum": 1
+        },
+        "script": { "enum": ["uthmani", "imlaei"] },
+        "text": { "type": "string" },
+        "sha256": { "description": "SHA-256 (hex) of `text` as produced by the engine.", "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "hadith_block": {
+      "type": "object",
+      "required": ["type", "match", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "hadith" },
+        "match": {
+          "description": "exact: inserted from the database unchanged. meaning: speaker narrated by meaning, `text` is what was said. not_found: no source located.",
+          "enum": ["exact", "meaning", "not_found"]
+        },
+        "collection": { "type": ["string", "null"] },
+        "number": { "type": ["string", "null"] },
+        "grade": { "type": ["string", "null"] },
+        "text": { "type": "string" },
+        "source_text": { "description": "Database text when match is `meaning`.", "type": ["string", "null"] },
+        "takhrij": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "tag_block": {
+      "type": "object",
+      "required": ["type", "tag"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "tag" },
+        "tag": { "enum": ["inaudible", "laughter", "crosstalk", "pause", "interruption", "other"] },
+        "note": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

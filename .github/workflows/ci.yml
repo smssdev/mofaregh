@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  text-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e "services/text-engine[dev]"
+      - run: python -m pytest
+        working-directory: services/text-engine
+
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -c "import json; json.load(open('shared/schemas/document.schema.json', encoding='utf-8'))"
+
+  # api:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: shivammathur/setup-php@v2
+  #       with: { php-version: "8.3" }
+  #     - run: composer install --no-interaction
+  #       working-directory: apps/api
+  #     - run: php artisan test
+  #       working-directory: apps/api
+
+  # web:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with: { node-version: "20" }
+  #     - run: npm ci && npm run lint && npm run test && npm run build
+  #       working-directory: apps/web
