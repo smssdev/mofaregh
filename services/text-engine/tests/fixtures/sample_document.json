@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "title": "دَرْسٌ تَجْرِيبِيٌّ فِي التَّفْرِيغِ",
+  "source_audio": {
+    "file_name": "sample.mp3",
+    "duration_ms": 70000
+  },
+  "settings": {
+    "tashkeel": "full",
+    "quran_script": "uthmani",
+    "quran_reference_format": "[{surah_name}: {ayah_range}]"
+  },
+  "speakers": [
+    {
+      "id": "sp1",
+      "name": "الشَّيْخُ"
+    },
+    {
+      "id": "sp2",
+      "name": "سائل"
+    }
+  ],
+  "segments": [
+    {
+      "id": "s1",
+      "start_ms": 0,
+      "end_ms": 4500,
+      "speaker_id": "sp1",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "مَرْحَبًا بِكُمْ فِي هٰذَا الدَّرْسِ، قَالَ تَعَالَى:"
+        },
+        {
+          "type": "quran",
+          "surah": 2,
+          "ayah_start": 5,
+          "ayah_end": 5,
+          "script": "uthmani",
+          "word_start": null,
+          "word_end": null,
+          "text": "قَالَمِيرُ سَنَادِيفَ وَتَرْكُونَ بِالْمُسَاتِيرِ ۚ وَهٰلَمُّونَ",
+          "sha256": "136fd13658a06a62e9cf0de6c96283c98d0c608a326725c6388babc913a47c2a"
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "start_ms": 5000,
+      "end_ms": 9000,
+      "speaker_id": "sp1",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "وَفِي الْحَدِيثِ:"
+        },
+        {
+          "type": "hadith",
+          "match": "exact",
+          "collection": "مجموعة تجريبية",
+          "number": "12",
+          "grade": "صحيح",
+          "text": "مَنْ دَارَكَ السَّنَاطِيرَ فَلْيُبَاسِرْ طُرُوفَهُ",
+          "source_text": null,
+          "takhrij": "أخرجه المصنف التجريبي (١٢)",
+          "sha256": "853533f9563f87a6d973bd7f92037cd4182d19573dd0431718615f52cd404025"
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "start_ms": 9500,
+      "end_ms": 13000,
+      "speaker_id": "sp2",
+      "blocks": [
+        {
+          "type": "text",
+          "text": "سُؤَالِي عَنِ الْمَعْنَى"
+        },
+        {
+          "type": "tag",
+          "tag": "inaudible",
+          "note": null
+        },
+        {
+          "type": "hadith",
+          "match": "meaning",
+          "collection": null,
+          "number": null,
+          "grade": null,
+          "text": "يَعْنِي أَنَّ الْكَلَامِيسَ تَتَوَارَدُ",
+          "source_text": "إِنَّ الْكَلَامِيسَ تُوَارِدُ بِالنَّفَاطِيرِ",
+          "takhrij": null,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "start_ms": 62345,
+      "end_ms": 65000,
+      "speaker_id": "sp1",
+      "blocks": [
+        {
+          "type": "hadith",
+          "match": "not_found",
+          "collection": null,
+          "number": null,
+          "grade": null,
+          "text": "وَرُوِيَ عَنْهُمْ أَنَّ الطُّرُوفَ مُبَاسَرَةٌ",
+          "source_text": null,
+          "takhrij": null,
+          "sha256": null
+        },
+        {
+          "type": "tag",
+          "tag": "laughter",
+          "note": null
+        },
+        {
+          "type": "quran",
+          "surah": 3,
+          "ayah_start": 7,
+          "ayah_end": 9,
+          "script": "uthmani",
+          "word_start": null,
+          "word_end": null,
+          "text": "فَرَاسِيمُ الدَّوَالِكِ طَنَبُوتٌ ۖ وَكَرَامِيلُ سُنْدُوفِيَّةٌ ٰ",
+          "sha256": "c4e0c76ba94e740eab44bd8ec314238803ffce83e072bc0bf3c094f3b272c135"
+        },
+        {
+          "type": "tag",
+          "tag": "other",
+          "note": "تصفيق"
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "start_ms": 65100,
+      "end_ms": 3723456,
+      "speaker_id": null,
+      "blocks": [
+        {
+          "type": "text",
+          "text": "وَالسَّلَامُ عَلَيْكُمْ."
+        },
+        {
+          "type": "tag",
+          "tag": "pause",
+          "note": null
+        }
+      ]
+    }
+  ]
+}
