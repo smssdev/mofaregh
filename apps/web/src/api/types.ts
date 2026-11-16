@@ -48,3 +48,52 @@ export interface AudioFile {
 export interface Paginated<T> {
   data: T[]
 }
+
+export type AsrStatus = 'none' | 'queued' | 'running' | 'done' | 'failed'
+
+/** A word the recogniser was unsure of: its exact times and where it sits in the paragraph text. */
+export interface UnclearWord {
+  start_ms: number
+  end_ms: number
+  text: string
+  offset: number
+}
+
+export interface AsrParagraph {
+  start_ms: number
+  end_ms: number
+  text: string
+  unclear?: UnclearWord[]
+}
+
+/** The editor's document as TipTap/ProseMirror JSON. */
+export interface EditorNode {
+  type?: string
+  attrs?: Record<string, unknown>
+  content?: EditorNode[]
+  marks?: { type: string; attrs?: Record<string, unknown> }[]
+  text?: string
+}
+
+export interface EditorDoc extends EditorNode {
+  type: 'doc'
+}
+
+export interface Transcript {
+  audio_file_id: number
+  title: string | null
+  content: EditorDoc | null
+  version: number
+  updated_at: string | null
+  updated_by?: { id: number; name: string } | null
+  asr: {
+    available: boolean
+    status: AsrStatus
+    progress: number
+    error: string | null
+    model: string | null
+    finished_at: string | null
+    paragraphs: AsrParagraph[] | null
+  }
+  export_available: boolean
+}

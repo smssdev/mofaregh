@@ -26,6 +26,14 @@ export const router = createRouter({
         { path: 'account', name: 'account', component: () => import('@/views/AccountView.vue'), meta: { title: 'حسابي' } },
       ],
     },
+    // The editor fills the whole window (player, ribbon, page), so it sits outside the app layout.
+    {
+      path: '/audio-files/:id(\\d+)/edit',
+      name: 'transcript-editor',
+      component: () => import('@/views/TranscriptEditorView.vue'),
+      props: (r) => ({ id: Number(r.params.id) }),
+      meta: { title: 'محرّر التفريغ' },
+    },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue'), meta: { title: 'الصفحة غير موجودة' } },
   ],
 })

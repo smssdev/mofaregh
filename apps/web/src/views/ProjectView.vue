@@ -208,6 +208,9 @@ const membersByRole = computed(() =>
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
                   <AudioStatusBadge :status="file.status" />
+                  <RouterLink v-if="file.status !== 'uploading'" :to="{ name: 'transcript-editor', params: { id: file.id } }" class="btn-primary px-3 py-1 text-xs">
+                    فتح المحرّر
+                  </RouterLink>
                   <button v-if="file.stream_url" class="btn-secondary px-3 py-1 text-xs" @click="playing = playing === file.id ? null : file.id">
                     {{ playing === file.id ? 'إخفاء المشغل' : 'استماع' }}
                   </button>

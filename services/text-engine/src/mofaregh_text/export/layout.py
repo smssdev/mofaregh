@@ -275,18 +275,22 @@ class _Builder:
         if self.opt.template != "client":
             yield from blocks
             return
+        first = True  # the first block of a segment starts its paragraph
         for block in blocks:
             text = block.get("text") if block.get("type") == "text" else None
-            if not text or "\n" not in text:
+            if not text:
                 yield block
+                first = False
                 continue
             for i, line in enumerate(text.split("\n")):
                 if i:
                     yield _BREAK
                 if not line.strip():
                     continue
-                m = re.match(r"\s*[•\-\*]\s*(.*)$", line)
-                yield {**block, "text": f"•	{m.group(1)}" if m else line}
+                # A bullet only counts where a paragraph starts, never in the middle of running text.
+                m = re.match(r"\s*(?:•\s*|[\-\*]\s+)(.*)$", line) if (first or i) else None
+                yield {**block, "text": "•\t" + m.group(1) if m else line}
+            first = False
 
     def build_lecture(self) -> None:
         current: Paragraph | None = None
