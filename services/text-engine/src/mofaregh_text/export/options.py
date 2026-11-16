@@ -40,7 +40,7 @@ class ExportOptions:
                        "transcript": one paragraph per segment, prefixed by
                        timestamp and speaker; Quran/hadith stay inline.
                        "client": the deliverable layout modelled on the client's
-                       reference file (ref/رمضان2.docx): one font and size for
+                       reference file (private; kept outside the repo): one font and size for
                        everything, justified with kashida, first-line indent,
                        Quran/hadith inline in the flow, no header/footer, no
                        bold/colour. Build it with ``ExportOptions.client()``.

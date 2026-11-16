@@ -578,6 +578,6 @@ class _Writer:
 
 def export_docx(document: dict, options: ExportOptions | None = None) -> bytes:
     """Render ``document`` (shared/schemas/document.schema.json) to .docx bytes."""
-    options = options or ExportOptions()
+    options = options or ExportOptions.client()  # default deliverable = client layout
     layout = build_layout(document, options)
     return _Writer(options).write(layout)

@@ -126,7 +126,7 @@ with U+200F for players that guess direction from the first character.
 
 ## Client template (`ExportOptions.client()`)
 
-Modelled on the client's reference file `ref/رمضان2.docx`, measured from its XML:
+Modelled on the client's reference file (private client data, deliberately not in the repo; only its measured layout is reproduced):
 A4, margins 2.54 cm top/bottom and 3.175 cm left/right, Sakkal Majalla 18 pt for
 everything (title, body, Quran, hadith), `jc="lowKashida"`, first-line indent 454
 twips (0.8 cm), 6 pt before/after, single line spacing, centred un-bolded title,
