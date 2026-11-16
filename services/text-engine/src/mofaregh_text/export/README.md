@@ -123,3 +123,17 @@ with U+200F for players that guess direction from the first character.
 - Footnote numbers use Word's default decimal format (Word may display them with
   Arabic-Indic digits depending on its "Numeral" setting).
 - Partial-verse quotes (`word_start`/`word_end`) are not reflected in the reference.
+
+## Client template (`ExportOptions.client()`)
+
+Modelled on the client's reference file `ref/رمضان2.docx`, measured from its XML:
+A4, margins 2.54 cm top/bottom and 3.175 cm left/right, Sakkal Majalla 18 pt for
+everything (title, body, Quran, hadith), `jc="lowKashida"`, first-line indent 454
+twips (0.8 cm), 6 pt before/after, single line spacing, centred un-bolded title,
+no header/footer, no colours. Quran is `﴿text﴾ [يونس: 45]` and exact hadith `«text»`
+inside the running paragraph (not set off). Pass `surah_names` for the reference
+names; extra overrides go through `ExportOptions.client(tashkeel="strip", ...)`.
+
+```python
+export_docx(document, ExportOptions.client(surah_names=SURAH_NAMES))
+```

@@ -132,6 +132,7 @@ def make_ppr(
     after: int | None = None,
     line: int | None = None,
     ind_twips: int | None = None,
+    first_line_twips: int | None = None,
     keep_next: bool = False,
     keep_lines: bool = False,
 ) -> etree._Element:
@@ -157,6 +158,8 @@ def make_ppr(
     if ind_twips is not None:
         # symmetric indentation: identical whatever Word decides left/right means
         c["ind"] = _w("ind", left=ind_twips, right=ind_twips)
+    if first_line_twips is not None:
+        c["ind"] = _w("ind", firstLine=first_line_twips)
     if jc:
         c["jc"] = _w("jc", val=jc)
     return _ordered("pPr", _PPR_ORDER, c)
@@ -246,6 +249,9 @@ def _install_styles(doc, o: ExportOptions) -> None:
         ppr_default.remove(child)
     ppr_default.append(make_ppr(after=120, line=276))
 
+    if o.template == "client":
+        _install_client_styles(styles, o)
+        return
     body, quran, hadith = o.body_font, o.quran_font, o.body_font
     small = max(1.0, o.body_size_pt - 2)
     hadith_color = "1F4E3D"
@@ -288,6 +294,55 @@ def _install_styles(doc, o: ExportOptions) -> None:
         _make_style("FootnoteReference", "character", based_on="DefaultParagraphFont",
                     ui_priority=99, unhide=True,
                     rpr=make_rpr(superscript=True)),
+    ]
+    for st in defs:
+        sid = st.get(qn("w:styleId"))
+        for old in styles.findall(qn("w:style")):
+            if old.get(qn("w:styleId")) == sid:
+                styles.remove(old)
+        styles.append(st)
+
+
+def _install_client_styles(styles, o: ExportOptions) -> None:
+    """Reference-file look: a single face and size, justified with kashida
+    (``lowKashida``), 0.8 cm first-line indent, 6 pt before/after, single line
+    spacing. Quran/hadith/reference/tags are plain character styles (no colour,
+    bold or size change) so they flow inside the paragraph."""
+    f = o.body_font
+    plain = dict(font=f, size_pt=o.body_size_pt)
+    body_ppr = dict(jc="lowKashida", before=120, after=120, line=240, first_line_twips=454)
+    defs = [
+        _make_style("MofareghTitle", "paragraph", based_on="Normal", next_style="MofareghBody",
+                    ppr=make_ppr(jc="center", before=120, after=120, line=240, keep_next=True),
+                    rpr=make_rpr(**plain)),
+        _make_style("MofareghBody", "paragraph", based_on="Normal", next_style="MofareghBody",
+                    ppr=make_ppr(**body_ppr), rpr=make_rpr(**plain)),
+        _make_style("MofareghQuran", "paragraph", based_on="MofareghBody",
+                    link="MofareghQuranChar", ppr=make_ppr(**body_ppr),
+                    rpr=make_rpr(font=o.quran_font, size_pt=o.quran_size_pt)),
+        _make_style("MofareghQuranChar", "character", based_on="DefaultParagraphFont",
+                    link="MofareghQuran",
+                    rpr=make_rpr(font=o.quran_font, size_pt=o.quran_size_pt)),
+        _make_style("MofareghHadith", "paragraph", based_on="MofareghBody",
+                    link="MofareghHadithChar", ppr=make_ppr(**body_ppr),
+                    rpr=make_rpr(font=f, size_pt=o.hadith_size_pt)),
+        _make_style("MofareghHadithChar", "character", based_on="DefaultParagraphFont",
+                    link="MofareghHadith", rpr=make_rpr(font=f, size_pt=o.hadith_size_pt)),
+        _make_style("MofareghTimestamp", "character", based_on="DefaultParagraphFont",
+                    rpr=make_rpr(**plain)),
+        _make_style("MofareghSpeaker", "character", based_on="DefaultParagraphFont",
+                    rpr=make_rpr(font=f, bold=True)),
+        _make_style("MofareghReference", "character", based_on="DefaultParagraphFont",
+                    rpr=make_rpr(**plain)),
+        _make_style("MofareghTag", "character", based_on="DefaultParagraphFont",
+                    rpr=make_rpr(**plain)),
+        _make_style("MofareghTakhrij", "character", based_on="DefaultParagraphFont",
+                    rpr=make_rpr(**plain)),
+        _make_style("FootnoteText", "paragraph", based_on="Normal", ui_priority=99, unhide=True,
+                    ppr=make_ppr(after=0, line=240),
+                    rpr=make_rpr(font=f, size_pt=o.footnote_size_pt)),
+        _make_style("FootnoteReference", "character", based_on="DefaultParagraphFont",
+                    ui_priority=99, unhide=True, rpr=make_rpr(superscript=True)),
     ]
     for st in defs:
         sid = st.get(qn("w:styleId"))
@@ -444,28 +499,30 @@ class _Writer:
     def _setup_section(self, title: str) -> None:
         sec = self.doc.sections[0]
         sec.page_width, sec.page_height = Mm(210), Mm(297)
-        m = Cm(self.o.margins_cm)
-        sec.top_margin = sec.bottom_margin = sec.left_margin = sec.right_margin = m
+        sec.top_margin = sec.bottom_margin = Cm(self.o.margins_cm)
+        side = self.o.side_margins_cm if self.o.side_margins_cm is not None else self.o.margins_cm
+        sec.left_margin = sec.right_margin = Cm(side)
         sec.gutter = 0
         sec.header_distance = sec.footer_distance = Cm(1.25)
 
-        hf_size = self.o.header_footer_size_pt
-        header = sec.header
-        header.is_linked_to_previous = False
-        hp = header.paragraphs[0]._p
-        for child in list(hp):
-            hp.remove(child)
-        hp.append(make_ppr(style="Header", jc="center"))
-        hp.append(make_run(title, rpr=make_rpr(size_pt=hf_size, color="595959")))
+        if self.o.template != "client":  # the reference file has no header/footer
+            hf_size = self.o.header_footer_size_pt
+            header = sec.header
+            header.is_linked_to_previous = False
+            hp = header.paragraphs[0]._p
+            for child in list(hp):
+                hp.remove(child)
+            hp.append(make_ppr(style="Header", jc="center"))
+            hp.append(make_run(title, rpr=make_rpr(size_pt=hf_size, color="595959")))
 
-        footer = sec.footer
-        footer.is_linked_to_previous = False
-        fp = footer.paragraphs[0]._p
-        for child in list(fp):
-            fp.remove(child)
-        fp.append(make_ppr(style="Footer", jc="center"))
-        for run in _field_runs("PAGE", hf_size):
-            fp.append(run)
+            footer = sec.footer
+            footer.is_linked_to_previous = False
+            fp = footer.paragraphs[0]._p
+            for child in list(fp):
+                fp.remove(child)
+            fp.append(make_ppr(style="Footer", jc="center"))
+            for run in _field_runs("PAGE", hf_size):
+                fp.append(run)
 
         sect = sec._sectPr
         # schema order: ... textDirection, bidi, rtlGutter, docGrid, printerSettings

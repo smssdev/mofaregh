@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-Template = Literal["lecture", "transcript"]
+Template = Literal["lecture", "transcript", "client"]
 Tashkeel = Literal["as_is", "strip"]
 Takhrij = Literal["footnote", "inline"]
 Digits = Literal["arabic_indic", "western"]
@@ -23,7 +23,7 @@ DEFAULT_QURAN_FONT_FALLBACKS: tuple[str, ...] = (
 DEFAULT_BODY_FONT = "Traditional Arabic"
 DEFAULT_BODY_FONT_FALLBACKS: tuple[str, ...] = ("Sakkal Majalla", "Arial")
 
-_TEMPLATES = ("lecture", "transcript")
+_TEMPLATES = ("lecture", "transcript", "client")
 _TASHKEEL = ("as_is", "strip")
 _TAKHRIJ = ("footnote", "inline")
 _DIGITS = ("arabic_indic", "western")
@@ -39,6 +39,11 @@ class ExportOptions:
                        hadith which are set off as their own paragraphs).
                        "transcript": one paragraph per segment, prefixed by
                        timestamp and speaker; Quran/hadith stay inline.
+                       "client": the deliverable layout modelled on the client's
+                       reference file (ref/رمضان2.docx): one font and size for
+                       everything, justified with kashida, first-line indent,
+                       Quran/hadith inline in the flow, no header/footer, no
+                       bold/colour. Build it with ``ExportOptions.client()``.
     include_timestamps Prefix paragraphs (lecture) / segments (transcript) with
                        ``[hh:mm:ss]``.
     timestamp_digits   "arabic_indic" (٠١:٠٢:٠٣) or "western" (01:02:03).
@@ -73,6 +78,7 @@ class ExportOptions:
     footnote_size_pt: float = 11
     header_footer_size_pt: float = 10
     margins_cm: float = 2.5
+    side_margins_cm: float | None = None  # left/right; None = margins_cm
 
     def __post_init__(self) -> None:
         _check("template", self.template, _TEMPLATES)
@@ -84,6 +90,29 @@ class ExportOptions:
                      "footnote_size_pt", "header_footer_size_pt"):
             if not 1 <= getattr(self, name) <= 1638:  # Word's max half-point size
                 raise ValueError(f"{name} out of range: {getattr(self, name)!r}")
+
+    @classmethod
+    def client(cls, **overrides: object) -> "ExportOptions":
+        """Defaults that reproduce the client's reference document: Sakkal Majalla
+        18 pt everywhere (Quran included), A4, margins 2.54 cm top/bottom and
+        3.175 cm left/right, Western digits in Quran references ``[يونس: 45]``."""
+        base: dict[str, object] = dict(
+            template="client",
+            body_font="Sakkal Majalla",
+            body_font_fallbacks=("Traditional Arabic", "Arial"),
+            quran_font="Sakkal Majalla",
+            quran_font_fallbacks=("Traditional Arabic", "Arial"),
+            body_size_pt=18,
+            quran_size_pt=18,
+            hadith_size_pt=18,
+            title_size_pt=18,
+            reference_digits="western",
+            timestamp_digits="western",
+            margins_cm=2.54,
+            side_margins_cm=3.175,
+        )
+        base.update(overrides)
+        return cls(**base)  # type: ignore[arg-type]
 
     @property
     def speakers_enabled(self) -> bool:

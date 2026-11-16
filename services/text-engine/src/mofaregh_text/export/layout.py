@@ -285,8 +285,9 @@ class _Builder:
             pending_ts: int | None = start if boundary or current is None else None
 
             for block in seg.get("blocks") or []:
-                set_off = block.get("type") == "quran" or (
-                    block.get("type") == "hadith" and block.get("match") == "exact"
+                set_off = self.opt.template != "client" and (
+                    block.get("type") == "quran"
+                    or (block.get("type") == "hadith" and block.get("match") == "exact")
                 )
                 if set_off:
                     flush()

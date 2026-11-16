@@ -367,3 +367,33 @@ def test_libreoffice_converts_to_pdf(document, tmp_path):
     pdf = tmp_path / "out.pdf"
     assert result.returncode == 0, result.stderr
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF")
+
+
+# --------------------------------------------------------------------------- client template
+
+
+def test_client_template_matches_reference_layout(document):
+    out = render_client(document)
+    doc_xml = out.xml("word/document.xml")
+    sect = doc_xml.find(".//w:sectPr", NS)
+    mar = sect.find("w:pgMar", NS)
+    assert (mar.get(w("top")), mar.get(w("left")), mar.get(w("right"))) == ("1440", "1800", "1800")
+    assert sect.find("w:headerReference", NS) is None and sect.find("w:footerReference", NS) is None
+    assert sect.find("w:bidi", NS) is not None
+    styles = out.xml("word/styles.xml")
+    body = styles.xpath("//w:style[@w:styleId='MofareghBody']", namespaces=NS)[0]
+    assert body.find("w:pPr/w:jc", NS).get(w("val")) == "lowKashida"
+    assert body.find("w:pPr/w:ind", NS).get(w("firstLine")) == "454"
+    assert body.find("w:pPr/w:spacing", NS).get(w("before")) == "120"
+    assert body.find("w:rPr/w:sz", NS).get(w("val")) == "36"  # 18 pt
+    assert body.find("w:rPr/w:rFonts", NS).get(w("cs")) == "Sakkal Majalla"
+    # Quran and exact hadith flow inside body paragraphs: no set-off paragraph styles used
+    used = {s.get(w("val")) for s in doc_xml.iter(w("pStyle"))}
+    assert used <= {"MofareghTitle", "MofareghBody"}
+    text = out.text()
+    for q in blocks(document, "quran"):
+        assert "﴿" + q["text"] + "﴾" in text
+
+
+def render_client(document, **kw) -> Docx:
+    return Docx(export_docx(document, ExportOptions.client(**kw)))
