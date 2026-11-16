@@ -399,13 +399,43 @@ def render_client(document, **kw) -> Docx:
     return Docx(export_docx(document, ExportOptions.client(**kw)))
 
 
-def test_client_strips_ordinary_tashkeel_but_keeps_formulas_and_quran(document):
+def test_client_strip_override_keeps_formulas_and_quran(document):
     document = copy.deepcopy(document)
     document["segments"][0]["blocks"][0] = {
         "type": "text", "text": "قَالَ الله تبارك وتعالى وصلى الله عليه وسلم"}
-    text = render_client(document).text()
+    text = render_client(document, tashkeel="strip").text()
     assert "قال الله" in text and "قَالَ الله" not in text
     assert "تَبَارَكَ وَتَعَالَى" in text
     assert "صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ" in text
     for q in blocks(document, "quran"):
         assert q["text"] in text  # locked text untouched
+
+
+def test_formulas_normalised_from_plain_and_partial_marks():
+    from mofaregh_text.export.formulas import restore_formulas
+    assert restore_formulas("الله تبارك وتعالى") == "الله تَبَارَكَ وَتَعَالَى"
+    assert restore_formulas("وصلى الله عليه وسلم،") == "وصَلَّى اللهُ عَلَيْهِ وَسَلَّمَ،"
+    assert restore_formulas("تَبارك وتَعالى") == "تَبَارَكَ وَتَعَالَى"
+    assert restore_formulas("رحمه الله تعالى") == "رَحِمَهُ اللهُ تَعَالَى"
+    assert restore_formulas("رحمه الله") == "رَحِمَهُ اللهُ"
+    assert restore_formulas("أيضًا وجدًّا") == "أيضًا وجدًّا"  # editor's tanween untouched
+
+
+def test_client_keeps_editor_tanween_and_uses_surah_names(document):
+    document = copy.deepcopy(document)
+    document["segments"][0]["blocks"][0] = {"type": "text", "text": "إذًا قال الله تبارك وتعالى"}
+    out = render_client(document)
+    assert "إذًا قال الله تَبَارَكَ وَتَعَالَى" in out.text()
+    document["segments"][0]["blocks"][1]["surah"] = 3
+    assert "[آل عمران:" in render_client(document).text()
+
+
+def test_client_bullets_and_poetry_lines(document):
+    document = copy.deepcopy(document)
+    document["segments"][0]["blocks"][0] = {
+        "type": "text", "text": "فيقول:\n• أولا\n• ثانيا\nبيت أول\n\t\tبيت ثان"}
+    out = render_client(document)
+    paras = ["".join(p.itertext()) for p in out.xml("word/document.xml").iter(w("p"))]
+    assert "فيقول:" in paras and "أولا" in "".join(paras)
+    assert any(p.startswith("•") and "أولا" in p for p in paras)
+    assert len(out.xml("word/document.xml").findall(".//w:tab", NS)) >= 4

@@ -159,6 +159,9 @@ def hadith_takhrij_text(block: Mapping) -> str | None:
 # --------------------------------------------------------------------------- builder
 
 
+_BREAK = object()  # paragraph boundary marker produced by expand_lines
+
+
 class _Builder:
     def __init__(self, document: Mapping, options: ExportOptions):
         self.doc = document
@@ -169,9 +172,8 @@ class _Builder:
     # ordinary text: policy-dependent
     def plain(self, text: str | None) -> str:
         text = _XML_INVALID.sub("", text or "")
-        if self.opt.tashkeel != "strip":
-            return text
-        text = strip_tashkeel(text)
+        if self.opt.tashkeel == "strip":
+            text = strip_tashkeel(text)
         return restore_formulas(text) if self.opt.keep_formulas else text
 
     def speaker_name(self, speaker_id: str | None) -> str | None:
@@ -264,6 +266,26 @@ class _Builder:
             if not para.is_empty:
                 self.paragraphs.append(para)
 
+    def expand_lines(self, blocks):
+        """Client template: a text block with line breaks becomes one paragraph per
+        line (poetry, lists); a line starting with a bullet becomes ``•<tab>text``
+        exactly as in the reference. Other templates are untouched."""
+        if self.opt.template != "client":
+            yield from blocks
+            return
+        for block in blocks:
+            text = block.get("text") if block.get("type") == "text" else None
+            if not text or "\n" not in text:
+                yield block
+                continue
+            for i, line in enumerate(text.split("\n")):
+                if i:
+                    yield _BREAK
+                if not line.strip():
+                    continue
+                m = re.match(r"\s*[•\-\*]\s*(.*)$", line)
+                yield {**block, "text": f"•	{m.group(1)}" if m else line}
+
     def build_lecture(self) -> None:
         current: Paragraph | None = None
         last_speaker_printed: object = object()  # sentinel: nothing printed yet
@@ -288,7 +310,10 @@ class _Builder:
                 flush()
             pending_ts: int | None = start if boundary or current is None else None
 
-            for block in seg.get("blocks") or []:
+            for block in self.expand_lines(seg.get("blocks") or []):
+                if block is _BREAK:
+                    flush()
+                    continue
                 set_off = self.opt.template != "client" and (
                     block.get("type") == "quran"
                     or (block.get("type") == "hadith" and block.get("match") == "exact")

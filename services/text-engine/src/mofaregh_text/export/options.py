@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from .surahs import SURAH_NAMES
+
 Template = Literal["lecture", "transcript", "client"]
 Tashkeel = Literal["as_is", "strip"]
 Takhrij = Literal["footnote", "inline"]
@@ -78,7 +80,7 @@ class ExportOptions:
     footnote_size_pt: float = 11
     header_footer_size_pt: float = 10
     margins_cm: float = 2.5
-    keep_formulas: bool = False  # after tashkeel="strip", re-vowel fixed formulas (see formulas.py)
+    keep_formulas: bool = False  # rewrite fixed formulas to their full vowelled form (formulas.py)
     side_margins_cm: float | None = None  # left/right; None = margins_cm
 
     def __post_init__(self) -> None:
@@ -107,8 +109,9 @@ class ExportOptions:
             quran_size_pt=18,
             hadith_size_pt=18,
             title_size_pt=18,
-            tashkeel="strip",
+            tashkeel="as_is",  # the editor decides tanween/marks; formulas are normalised
             keep_formulas=True,
+            surah_names=SURAH_NAMES,
             reference_digits="western",
             timestamp_digits="western",
             margins_cm=2.54,

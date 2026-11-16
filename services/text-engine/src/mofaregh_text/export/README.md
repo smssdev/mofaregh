@@ -138,8 +138,16 @@ names; extra overrides go through `ExportOptions.client(tashkeel="strip", ...)`.
 export_docx(document, ExportOptions.client(surah_names=SURAH_NAMES))
 ```
 
-**Tashkeel in the client template.** Matches the reference's convention (measured: ordinary
-speech carries no vowel marks; only formulas, Quran and hadith do): `tashkeel="strip"` for
-ordinary text, then `formulas.py` re-vowels fixed formulas (تَبَارَكَ وَتَعَالَى، صَلَّى اللهُ
-عَلَيْهِ وَسَلَّمَ، جَلَّ فِي عُلَاهُ). Quran and exact hadith are never touched. Add the client's
-approved formulas to `FORMULAS`.
+**Tashkeel in the client template.** Measured on the reference (26 pages): ordinary speech is
+vowelled only where the editor chose to (tanween such as أيضًا / إذًا / جدًّا, a few marks);
+Quran and hadith quotes and a fixed set of formulas are fully vowelled. So the template keeps
+`tashkeel="as_is"` (the editor decides) and `formulas.py` rewrites each formula to its canonical
+full form whether the input has none, partial or other marks: تَبَارَكَ وَتَعَالَى، صَلَّى اللهُ عَلَيْهِ
+وَسَلَّمَ، جَلَّ فِي عُلَاهُ، جَلَّ وَعَلَا، رَضِيَ اللهُ عَنْهَا / عَنْهُ (inferred), رَحِمَهُ اللهُ (تَعَالَى)،
+عَلَيْهِ السَّلَامُ. Quran and exact hadith are never touched. Add the client's approved formulas
+to `FORMULAS`. `ExportOptions.client(tashkeel="strip")` still strips ordinary text (formulas kept).
+
+Quran references use all 114 surah names (`surahs.py`) with Western digits: `[آل عمران: 102]`.
+A text block containing line breaks becomes one paragraph per line (poetry; leading tabs are kept);
+a line starting with `•` / `-` / `*` becomes `•<tab>text` as in the reference.
+Not reproduced: the stray Wingdings glyphs (private-use characters that show as boxes) in the reference.

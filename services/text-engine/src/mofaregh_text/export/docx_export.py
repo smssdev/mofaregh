@@ -168,10 +168,14 @@ def make_ppr(
 def make_run(text: str, style: str | None = None, rpr: etree._Element | None = None):
     r = _w("r")
     r.append(rpr if rpr is not None else make_rpr(style=style))
-    t = _w("t")
-    t.text = text
-    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-    r.append(t)
+    for i, chunk in enumerate(text.split("	")):
+        if i:
+            r.append(_w("tab"))
+        if chunk:
+            t = _w("t")
+            t.text = chunk
+            t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            r.append(t)
     return r
 
 
