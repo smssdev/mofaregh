@@ -123,3 +123,35 @@ with U+200F for players that guess direction from the first character.
 - Footnote numbers use Word's default decimal format (Word may display them with
   Arabic-Indic digits depending on its "Numeral" setting).
 - Partial-verse quotes (`word_start`/`word_end`) are not reflected in the reference.
+
+## Client template (default: `export_docx(document)` / `ExportOptions.client()`)
+
+The deliverable layout. It is **not** rebuilt from measurements: `templates/client.docx`
+is the client's reference document with every paragraph and all personal metadata removed
+(`scripts/build_client_template.py <reference.docx>`), so styles, settings (compatibility
+mode 15, OpenType features), theme, font table and page setup are the reference's own.
+`client_docx.py` fills it with the same markup the reference uses: no paragraph or
+character styles, only `<w:rtl/>` on runs; the title is the same paragraph with `jc=center`.
+Result: Sakkal Majalla 18 pt, kashida justification, 0.8 cm first-line indent, 6 pt
+before/after, A4 with 2.54 / 3.175 cm margins, no header/footer, no bold or colour.
+The font/size/margin fields of `ExportOptions` are ignored by this template.
+The reference itself is private client data and is never committed.
+
+**Content rules** (learned from the reference, 26 pages):
+
+- Quran `﴿text﴾ [آل عمران: 102]` and exact hadith `«text»` run inside the paragraph;
+  references use the 114 surah names (`surahs.py`) and Western digits.
+- Tashkeel is the editor's (`tashkeel="as_is"`): ordinary speech is unvowelled apart from
+  tanween and the odd mark. `formulas.py` rewrites the fixed formulas to their full vowelled
+  form whatever marks the input has: تَبَارَكَ وَتَعَالَى، صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ، جَلَّ فِي عُلَاهُ،
+  جَلَّ وَعَلَا، رَضِيَ اللهُ عَنْهَا / عَنْهُ (inferred), رَحِمَهُ اللهُ (تَعَالَى)، عَلَيْهِ السَّلَامُ.
+  Quran and exact hadith are never touched. `client(tashkeel="strip")` strips ordinary text
+  and still keeps the formulas.
+- A text block with line breaks becomes one paragraph per line (poetry; leading tabs kept);
+  a line starting with `•` / `-` / `*` becomes `•<tab>text`.
+- Footnotes (hadith by meaning / not found / takhrij) use direct 12 pt formatting; the
+  reference has none.
+- Not reproduced: the stray private-use (Wingdings) glyphs of the reference.
+
+`samples/client_sample.docx` (20 pages, `scripts/make_client_sample.py`) shows all of it
+with text written for the sample. Verified by rendering both files in Microsoft Word.

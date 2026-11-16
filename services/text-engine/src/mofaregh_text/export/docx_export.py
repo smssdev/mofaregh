@@ -132,6 +132,7 @@ def make_ppr(
     after: int | None = None,
     line: int | None = None,
     ind_twips: int | None = None,
+    first_line_twips: int | None = None,
     keep_next: bool = False,
     keep_lines: bool = False,
 ) -> etree._Element:
@@ -157,6 +158,8 @@ def make_ppr(
     if ind_twips is not None:
         # symmetric indentation: identical whatever Word decides left/right means
         c["ind"] = _w("ind", left=ind_twips, right=ind_twips)
+    if first_line_twips is not None:
+        c["ind"] = _w("ind", firstLine=first_line_twips)
     if jc:
         c["jc"] = _w("jc", val=jc)
     return _ordered("pPr", _PPR_ORDER, c)
@@ -165,10 +168,14 @@ def make_ppr(
 def make_run(text: str, style: str | None = None, rpr: etree._Element | None = None):
     r = _w("r")
     r.append(rpr if rpr is not None else make_rpr(style=style))
-    t = _w("t")
-    t.text = text
-    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-    r.append(t)
+    for i, chunk in enumerate(text.split("	")):
+        if i:
+            r.append(_w("tab"))
+        if chunk:
+            t = _w("t")
+            t.text = chunk
+            t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            r.append(t)
     return r
 
 
@@ -444,28 +451,30 @@ class _Writer:
     def _setup_section(self, title: str) -> None:
         sec = self.doc.sections[0]
         sec.page_width, sec.page_height = Mm(210), Mm(297)
-        m = Cm(self.o.margins_cm)
-        sec.top_margin = sec.bottom_margin = sec.left_margin = sec.right_margin = m
+        sec.top_margin = sec.bottom_margin = Cm(self.o.margins_cm)
+        side = self.o.side_margins_cm if self.o.side_margins_cm is not None else self.o.margins_cm
+        sec.left_margin = sec.right_margin = Cm(side)
         sec.gutter = 0
         sec.header_distance = sec.footer_distance = Cm(1.25)
 
-        hf_size = self.o.header_footer_size_pt
-        header = sec.header
-        header.is_linked_to_previous = False
-        hp = header.paragraphs[0]._p
-        for child in list(hp):
-            hp.remove(child)
-        hp.append(make_ppr(style="Header", jc="center"))
-        hp.append(make_run(title, rpr=make_rpr(size_pt=hf_size, color="595959")))
+        if self.o.template != "client":  # the reference file has no header/footer
+            hf_size = self.o.header_footer_size_pt
+            header = sec.header
+            header.is_linked_to_previous = False
+            hp = header.paragraphs[0]._p
+            for child in list(hp):
+                hp.remove(child)
+            hp.append(make_ppr(style="Header", jc="center"))
+            hp.append(make_run(title, rpr=make_rpr(size_pt=hf_size, color="595959")))
 
-        footer = sec.footer
-        footer.is_linked_to_previous = False
-        fp = footer.paragraphs[0]._p
-        for child in list(fp):
-            fp.remove(child)
-        fp.append(make_ppr(style="Footer", jc="center"))
-        for run in _field_runs("PAGE", hf_size):
-            fp.append(run)
+            footer = sec.footer
+            footer.is_linked_to_previous = False
+            fp = footer.paragraphs[0]._p
+            for child in list(fp):
+                fp.remove(child)
+            fp.append(make_ppr(style="Footer", jc="center"))
+            for run in _field_runs("PAGE", hf_size):
+                fp.append(run)
 
         sect = sec._sectPr
         # schema order: ... textDirection, bidi, rtlGutter, docGrid, printerSettings
@@ -521,6 +530,10 @@ class _Writer:
 
 def export_docx(document: dict, options: ExportOptions | None = None) -> bytes:
     """Render ``document`` (shared/schemas/document.schema.json) to .docx bytes."""
-    options = options or ExportOptions()
+    options = options or ExportOptions.client()  # default deliverable = client layout
     layout = build_layout(document, options)
+    if options.template == "client":
+        from .client_docx import ClientWriter  # fills the reference-derived template
+
+        return ClientWriter(options).write(layout)
     return _Writer(options).write(layout)

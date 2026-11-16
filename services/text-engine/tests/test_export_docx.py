@@ -367,3 +367,90 @@ def test_libreoffice_converts_to_pdf(document, tmp_path):
     pdf = tmp_path / "out.pdf"
     assert result.returncode == 0, result.stderr
     assert pdf.exists() and pdf.read_bytes().startswith(b"%PDF")
+
+
+# --------------------------------------------------------------------------- client template
+
+
+def test_client_output_uses_reference_template_markup(document):
+    out = render_client(document)
+    template = Docx((Path(__file__).parents[1]
+                     / "src/mofaregh_text/export/templates/client.docx").read_bytes())
+    # formatting parts are the reference's own, untouched
+    for part in ("word/styles.xml", "word/theme/theme1.xml", "word/fontTable.xml",
+                 "word/numbering.xml"):
+        assert out.xml(part) is not None
+        assert etree.tostring(out.xml(part), method="c14n") == etree.tostring(
+            template.xml(part), method="c14n")
+    doc_xml = out.xml("word/document.xml")
+    sect = doc_xml.find(".//w:sectPr", NS)
+    mar = sect.find("w:pgMar", NS)
+    assert (mar.get(w("top")), mar.get(w("left")), mar.get(w("right"))) == ("1440", "1800", "1800")
+    assert sect.find("w:headerReference", NS) is None
+    # same markup as the reference: no paragraph/character styles, no fonts, no colours
+    for tag in ("pStyle", "rStyle", "rFonts", "color"):
+        assert doc_xml.find(f".//w:{tag}", NS) is None, tag
+    paras = doc_xml.findall(".//w:body/w:p", NS)
+    assert paras[0].find("w:pPr/w:jc", NS).get(w("val")) == "center"      # title
+    assert all(p.find("w:pPr/w:jc", NS) is None for p in paras[1:])
+    assert all(r.find("w:rPr/w:rtl", NS) is not None for r in doc_xml.iter(w("r")))
+    text = out.text()
+    for q in blocks(document, "quran"):
+        assert "﴿" + q["text"] + "﴾" in text
+
+
+def test_client_template_has_no_text_or_personal_metadata():
+    template = Docx((Path(__file__).parents[1]
+                     / "src/mofaregh_text/export/templates/client.docx").read_bytes())
+    assert template.xml("word/document.xml").findall(".//w:p", NS) == []
+    core = template.raw("docProps/core.xml").decode("utf-8")
+    assert "lastModifiedBy" not in core and "Mofaregh" in core
+    assert b"w:rsid" not in template.raw("word/settings.xml")
+
+
+def render_client(document, **kw) -> Docx:
+    return Docx(export_docx(document, ExportOptions.client(**kw)))
+
+
+def test_client_strip_override_keeps_formulas_and_quran(document):
+    document = copy.deepcopy(document)
+    document["segments"][0]["blocks"][0] = {
+        "type": "text", "text": "قَالَ الله تبارك وتعالى وصلى الله عليه وسلم"}
+    text = render_client(document, tashkeel="strip").text()
+    assert "قال الله" in text and "قَالَ الله" not in text
+    assert "تَبَارَكَ وَتَعَالَى" in text
+    assert "صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ" in text
+    for q in blocks(document, "quran"):
+        assert q["text"] in text  # locked text untouched
+
+
+def test_formulas_normalised_from_plain_and_partial_marks():
+    from mofaregh_text.export.formulas import restore_formulas
+    assert restore_formulas("الله تبارك وتعالى") == "الله تَبَارَكَ وَتَعَالَى"
+    assert restore_formulas("وصلى الله عليه وسلم،") == "وصَلَّى اللهُ عَلَيْهِ وَسَلَّمَ،"
+    assert restore_formulas("تَبارك وتَعالى") == "تَبَارَكَ وَتَعَالَى"
+    assert restore_formulas("رحمه الله تعالى") == "رَحِمَهُ اللهُ تَعَالَى"
+    assert restore_formulas("رحمه الله") == "رَحِمَهُ اللهُ"
+    assert restore_formulas("عائشة رضي الله عنها مرجعًا") == "عائشة رَضِيَ اللهُ عَنْهَا مرجعًا"
+    assert restore_formulas(restore_formulas("رضي الله عنها")) == "رَضِيَ اللهُ عَنْهَا"  # idempotent
+    assert restore_formulas("أيضًا وجدًّا") == "أيضًا وجدًّا"  # editor's tanween untouched
+
+
+def test_client_keeps_editor_tanween_and_uses_surah_names(document):
+    document = copy.deepcopy(document)
+    document["segments"][0]["blocks"][0] = {"type": "text", "text": "إذًا قال الله تبارك وتعالى"}
+    out = render_client(document)
+    assert "إذًا قال الله تَبَارَكَ وَتَعَالَى" in out.text()
+    document["segments"][0]["blocks"][1]["surah"] = 3
+    assert "[آل عمران:" in render_client(document).text()
+
+
+def test_client_bullets_and_poetry_lines(document):
+    document = copy.deepcopy(document)
+    document["segments"][0]["blocks"][0] = {
+        "type": "text", "text": "فيقول:\n• أولا\n• ثانيا\nبيت أول\n\t\tبيت ثان"}
+    out = render_client(document)
+    paras = ["".join(p.itertext()) for p in out.xml("word/document.xml").iter(w("p"))]
+    assert "فيقول:" in paras and "أولا" in "".join(paras)
+    assert any(p.startswith("•") and "أولا" in p for p in paras)
+    assert len(out.xml("word/document.xml").findall(".//w:tab", NS)) >= 4

@@ -18,6 +18,7 @@ from typing import Literal, Union
 
 from mofaregh_text.arabic.diacritics import strip_tashkeel
 
+from .formulas import restore_formulas
 from .options import ExportOptions
 
 Role = Literal[
@@ -158,6 +159,9 @@ def hadith_takhrij_text(block: Mapping) -> str | None:
 # --------------------------------------------------------------------------- builder
 
 
+_BREAK = object()  # paragraph boundary marker produced by expand_lines
+
+
 class _Builder:
     def __init__(self, document: Mapping, options: ExportOptions):
         self.doc = document
@@ -168,7 +172,9 @@ class _Builder:
     # ordinary text: policy-dependent
     def plain(self, text: str | None) -> str:
         text = _XML_INVALID.sub("", text or "")
-        return strip_tashkeel(text) if self.opt.tashkeel == "strip" else text
+        if self.opt.tashkeel == "strip":
+            text = strip_tashkeel(text)
+        return restore_formulas(text) if self.opt.keep_formulas else text
 
     def speaker_name(self, speaker_id: str | None) -> str | None:
         if speaker_id is None:
@@ -246,7 +252,9 @@ class _Builder:
             return
         has_content = any(isinstance(i, Footnote) or (i.role not in ("timestamp", "speaker")
                                                      and i.text.strip()) for i in para.items)
-        if has_content:
+        first = items[0]
+        starts_with_punct = isinstance(first, Span) and first.text[:1] in "،.؛:؟!)»"
+        if has_content and not starts_with_punct:  # no space before "، ..." after a quote
             para.add(Span(" ", "text"))
         para.items.extend(items)
 
@@ -259,6 +267,26 @@ class _Builder:
                 self.append_inline(para, self.inline_items(block))
             if not para.is_empty:
                 self.paragraphs.append(para)
+
+    def expand_lines(self, blocks):
+        """Client template: a text block with line breaks becomes one paragraph per
+        line (poetry, lists); a line starting with a bullet becomes ``•<tab>text``
+        exactly as in the reference. Other templates are untouched."""
+        if self.opt.template != "client":
+            yield from blocks
+            return
+        for block in blocks:
+            text = block.get("text") if block.get("type") == "text" else None
+            if not text or "\n" not in text:
+                yield block
+                continue
+            for i, line in enumerate(text.split("\n")):
+                if i:
+                    yield _BREAK
+                if not line.strip():
+                    continue
+                m = re.match(r"\s*[•\-\*]\s*(.*)$", line)
+                yield {**block, "text": f"•	{m.group(1)}" if m else line}
 
     def build_lecture(self) -> None:
         current: Paragraph | None = None
@@ -284,9 +312,13 @@ class _Builder:
                 flush()
             pending_ts: int | None = start if boundary or current is None else None
 
-            for block in seg.get("blocks") or []:
-                set_off = block.get("type") == "quran" or (
-                    block.get("type") == "hadith" and block.get("match") == "exact"
+            for block in self.expand_lines(seg.get("blocks") or []):
+                if block is _BREAK:
+                    flush()
+                    continue
+                set_off = self.opt.template != "client" and (
+                    block.get("type") == "quran"
+                    or (block.get("type") == "hadith" and block.get("match") == "exact")
                 )
                 if set_off:
                     flush()
