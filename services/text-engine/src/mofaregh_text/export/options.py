@@ -96,26 +96,16 @@ class ExportOptions:
 
     @classmethod
     def client(cls, **overrides: object) -> "ExportOptions":
-        """Defaults that reproduce the client's reference document: Sakkal Majalla
-        18 pt everywhere (Quran included), A4, margins 2.54 cm top/bottom and
-        3.175 cm left/right, Western digits in Quran references ``[يونس: 45]``."""
+        """The client deliverable. Fonts, sizes, margins and spacing are NOT options
+        here: they come from ``templates/client.docx`` (the reference's own styles),
+        so the font/size/margin fields of this class are ignored by this template."""
         base: dict[str, object] = dict(
             template="client",
-            body_font="Sakkal Majalla",
-            body_font_fallbacks=("Traditional Arabic", "Arial"),
-            quran_font="Sakkal Majalla",
-            quran_font_fallbacks=("Traditional Arabic", "Arial"),
-            body_size_pt=18,
-            quran_size_pt=18,
-            hadith_size_pt=18,
-            title_size_pt=18,
             tashkeel="as_is",  # the editor decides tanween/marks; formulas are normalised
             keep_formulas=True,
             surah_names=SURAH_NAMES,
             reference_digits="western",
             timestamp_digits="western",
-            margins_cm=2.54,
-            side_margins_cm=3.175,
         )
         base.update(overrides)
         return cls(**base)  # type: ignore[arg-type]

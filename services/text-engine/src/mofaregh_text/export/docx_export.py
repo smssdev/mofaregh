@@ -253,9 +253,6 @@ def _install_styles(doc, o: ExportOptions) -> None:
         ppr_default.remove(child)
     ppr_default.append(make_ppr(after=120, line=276))
 
-    if o.template == "client":
-        _install_client_styles(styles, o)
-        return
     body, quran, hadith = o.body_font, o.quran_font, o.body_font
     small = max(1.0, o.body_size_pt - 2)
     hadith_color = "1F4E3D"
@@ -298,55 +295,6 @@ def _install_styles(doc, o: ExportOptions) -> None:
         _make_style("FootnoteReference", "character", based_on="DefaultParagraphFont",
                     ui_priority=99, unhide=True,
                     rpr=make_rpr(superscript=True)),
-    ]
-    for st in defs:
-        sid = st.get(qn("w:styleId"))
-        for old in styles.findall(qn("w:style")):
-            if old.get(qn("w:styleId")) == sid:
-                styles.remove(old)
-        styles.append(st)
-
-
-def _install_client_styles(styles, o: ExportOptions) -> None:
-    """Reference-file look: a single face and size, justified with kashida
-    (``lowKashida``), 0.8 cm first-line indent, 6 pt before/after, single line
-    spacing. Quran/hadith/reference/tags are plain character styles (no colour,
-    bold or size change) so they flow inside the paragraph."""
-    f = o.body_font
-    plain = dict(font=f, size_pt=o.body_size_pt)
-    body_ppr = dict(jc="lowKashida", before=120, after=120, line=240, first_line_twips=454)
-    defs = [
-        _make_style("MofareghTitle", "paragraph", based_on="Normal", next_style="MofareghBody",
-                    ppr=make_ppr(jc="center", before=120, after=120, line=240, keep_next=True),
-                    rpr=make_rpr(**plain)),
-        _make_style("MofareghBody", "paragraph", based_on="Normal", next_style="MofareghBody",
-                    ppr=make_ppr(**body_ppr), rpr=make_rpr(**plain)),
-        _make_style("MofareghQuran", "paragraph", based_on="MofareghBody",
-                    link="MofareghQuranChar", ppr=make_ppr(**body_ppr),
-                    rpr=make_rpr(font=o.quran_font, size_pt=o.quran_size_pt)),
-        _make_style("MofareghQuranChar", "character", based_on="DefaultParagraphFont",
-                    link="MofareghQuran",
-                    rpr=make_rpr(font=o.quran_font, size_pt=o.quran_size_pt)),
-        _make_style("MofareghHadith", "paragraph", based_on="MofareghBody",
-                    link="MofareghHadithChar", ppr=make_ppr(**body_ppr),
-                    rpr=make_rpr(font=f, size_pt=o.hadith_size_pt)),
-        _make_style("MofareghHadithChar", "character", based_on="DefaultParagraphFont",
-                    link="MofareghHadith", rpr=make_rpr(font=f, size_pt=o.hadith_size_pt)),
-        _make_style("MofareghTimestamp", "character", based_on="DefaultParagraphFont",
-                    rpr=make_rpr(**plain)),
-        _make_style("MofareghSpeaker", "character", based_on="DefaultParagraphFont",
-                    rpr=make_rpr(font=f, bold=True)),
-        _make_style("MofareghReference", "character", based_on="DefaultParagraphFont",
-                    rpr=make_rpr(**plain)),
-        _make_style("MofareghTag", "character", based_on="DefaultParagraphFont",
-                    rpr=make_rpr(**plain)),
-        _make_style("MofareghTakhrij", "character", based_on="DefaultParagraphFont",
-                    rpr=make_rpr(**plain)),
-        _make_style("FootnoteText", "paragraph", based_on="Normal", ui_priority=99, unhide=True,
-                    ppr=make_ppr(after=0, line=240),
-                    rpr=make_rpr(font=f, size_pt=o.footnote_size_pt)),
-        _make_style("FootnoteReference", "character", based_on="DefaultParagraphFont",
-                    ui_priority=99, unhide=True, rpr=make_rpr(superscript=True)),
     ]
     for st in defs:
         sid = st.get(qn("w:styleId"))
@@ -584,4 +532,8 @@ def export_docx(document: dict, options: ExportOptions | None = None) -> bytes:
     """Render ``document`` (shared/schemas/document.schema.json) to .docx bytes."""
     options = options or ExportOptions.client()  # default deliverable = client layout
     layout = build_layout(document, options)
+    if options.template == "client":
+        from .client_docx import ClientWriter  # fills the reference-derived template
+
+        return ClientWriter(options).write(layout)
     return _Writer(options).write(layout)

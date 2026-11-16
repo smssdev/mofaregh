@@ -252,7 +252,9 @@ class _Builder:
             return
         has_content = any(isinstance(i, Footnote) or (i.role not in ("timestamp", "speaker")
                                                      and i.text.strip()) for i in para.items)
-        if has_content:
+        first = items[0]
+        starts_with_punct = isinstance(first, Span) and first.text[:1] in "،.؛:؟!)»"
+        if has_content and not starts_with_punct:  # no space before "، ..." after a quote
             para.add(Span(" ", "text"))
         para.items.extend(items)
 

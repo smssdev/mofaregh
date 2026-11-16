@@ -29,7 +29,8 @@ FORMULAS: tuple[str, ...] = (
     "عَلَيْهِ السَّلَامُ",
 )
 
-_MARKS = "[" + "".join(sorted(HARAKAT | QURANIC_MARKS)) + "]*"
+_MARK_CHARS = "".join(sorted(HARAKAT | QURANIC_MARKS))
+_MARKS = "[" + _MARK_CHARS + "]*"
 
 
 def _pattern(vowelled: str) -> str:
@@ -37,7 +38,9 @@ def _pattern(vowelled: str) -> str:
     # every letter may already carry any marks; words are separated by any whitespace;
     # a prefixed و/ف is fine ("وصلى الله عليه وسلم"); must not run into a following letter.
     body = r"\s+".join("".join(re.escape(ch) + _MARKS for ch in w) for w in words)
-    return body + r"(?![ء-ي])"
+    # the lookahead also rejects marks, so a shorter formula cannot stop inside a longer
+    # word by backtracking over its vowels ("عنه" inside "عَنْهَا")
+    return body + "(?![ء-ي" + _MARK_CHARS + "])"
 
 
 # longest first so "رحمه الله تعالى" wins over "رحمه الله"

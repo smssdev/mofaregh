@@ -372,27 +372,40 @@ def test_libreoffice_converts_to_pdf(document, tmp_path):
 # --------------------------------------------------------------------------- client template
 
 
-def test_client_template_matches_reference_layout(document):
+def test_client_output_uses_reference_template_markup(document):
     out = render_client(document)
+    template = Docx((Path(__file__).parents[1]
+                     / "src/mofaregh_text/export/templates/client.docx").read_bytes())
+    # formatting parts are the reference's own, untouched
+    for part in ("word/styles.xml", "word/theme/theme1.xml", "word/fontTable.xml",
+                 "word/numbering.xml"):
+        assert out.xml(part) is not None
+        assert etree.tostring(out.xml(part), method="c14n") == etree.tostring(
+            template.xml(part), method="c14n")
     doc_xml = out.xml("word/document.xml")
     sect = doc_xml.find(".//w:sectPr", NS)
     mar = sect.find("w:pgMar", NS)
     assert (mar.get(w("top")), mar.get(w("left")), mar.get(w("right"))) == ("1440", "1800", "1800")
-    assert sect.find("w:headerReference", NS) is None and sect.find("w:footerReference", NS) is None
-    assert sect.find("w:bidi", NS) is not None
-    styles = out.xml("word/styles.xml")
-    body = styles.xpath("//w:style[@w:styleId='MofareghBody']", namespaces=NS)[0]
-    assert body.find("w:pPr/w:jc", NS).get(w("val")) == "lowKashida"
-    assert body.find("w:pPr/w:ind", NS).get(w("firstLine")) == "454"
-    assert body.find("w:pPr/w:spacing", NS).get(w("before")) == "120"
-    assert body.find("w:rPr/w:sz", NS).get(w("val")) == "36"  # 18 pt
-    assert body.find("w:rPr/w:rFonts", NS).get(w("cs")) == "Sakkal Majalla"
-    # Quran and exact hadith flow inside body paragraphs: no set-off paragraph styles used
-    used = {s.get(w("val")) for s in doc_xml.iter(w("pStyle"))}
-    assert used <= {"MofareghTitle", "MofareghBody"}
+    assert sect.find("w:headerReference", NS) is None
+    # same markup as the reference: no paragraph/character styles, no fonts, no colours
+    for tag in ("pStyle", "rStyle", "rFonts", "color"):
+        assert doc_xml.find(f".//w:{tag}", NS) is None, tag
+    paras = doc_xml.findall(".//w:body/w:p", NS)
+    assert paras[0].find("w:pPr/w:jc", NS).get(w("val")) == "center"      # title
+    assert all(p.find("w:pPr/w:jc", NS) is None for p in paras[1:])
+    assert all(r.find("w:rPr/w:rtl", NS) is not None for r in doc_xml.iter(w("r")))
     text = out.text()
     for q in blocks(document, "quran"):
         assert "﴿" + q["text"] + "﴾" in text
+
+
+def test_client_template_has_no_text_or_personal_metadata():
+    template = Docx((Path(__file__).parents[1]
+                     / "src/mofaregh_text/export/templates/client.docx").read_bytes())
+    assert template.xml("word/document.xml").findall(".//w:p", NS) == []
+    core = template.raw("docProps/core.xml").decode("utf-8")
+    assert "lastModifiedBy" not in core and "Mofaregh" in core
+    assert b"w:rsid" not in template.raw("word/settings.xml")
 
 
 def render_client(document, **kw) -> Docx:
@@ -418,6 +431,8 @@ def test_formulas_normalised_from_plain_and_partial_marks():
     assert restore_formulas("تَبارك وتَعالى") == "تَبَارَكَ وَتَعَالَى"
     assert restore_formulas("رحمه الله تعالى") == "رَحِمَهُ اللهُ تَعَالَى"
     assert restore_formulas("رحمه الله") == "رَحِمَهُ اللهُ"
+    assert restore_formulas("عائشة رضي الله عنها مرجعًا") == "عائشة رَضِيَ اللهُ عَنْهَا مرجعًا"
+    assert restore_formulas(restore_formulas("رضي الله عنها")) == "رَضِيَ اللهُ عَنْهَا"  # idempotent
     assert restore_formulas("أيضًا وجدًّا") == "أيضًا وجدًّا"  # editor's tanween untouched
 
 

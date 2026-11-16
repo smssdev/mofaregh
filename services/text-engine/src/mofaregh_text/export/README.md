@@ -124,30 +124,34 @@ with U+200F for players that guess direction from the first character.
   Arabic-Indic digits depending on its "Numeral" setting).
 - Partial-verse quotes (`word_start`/`word_end`) are not reflected in the reference.
 
-## Client template (`ExportOptions.client()`)
+## Client template (default: `export_docx(document)` / `ExportOptions.client()`)
 
-Modelled on the client's reference file (private client data, deliberately not in the repo; only its measured layout is reproduced):
-A4, margins 2.54 cm top/bottom and 3.175 cm left/right, Sakkal Majalla 18 pt for
-everything (title, body, Quran, hadith), `jc="lowKashida"`, first-line indent 454
-twips (0.8 cm), 6 pt before/after, single line spacing, centred un-bolded title,
-no header/footer, no colours. Quran is `﴿text﴾ [يونس: 45]` and exact hadith `«text»`
-inside the running paragraph (not set off). Pass `surah_names` for the reference
-names; extra overrides go through `ExportOptions.client(tashkeel="strip", ...)`.
+The deliverable layout. It is **not** rebuilt from measurements: `templates/client.docx`
+is the client's reference document with every paragraph and all personal metadata removed
+(`scripts/build_client_template.py <reference.docx>`), so styles, settings (compatibility
+mode 15, OpenType features), theme, font table and page setup are the reference's own.
+`client_docx.py` fills it with the same markup the reference uses: no paragraph or
+character styles, only `<w:rtl/>` on runs; the title is the same paragraph with `jc=center`.
+Result: Sakkal Majalla 18 pt, kashida justification, 0.8 cm first-line indent, 6 pt
+before/after, A4 with 2.54 / 3.175 cm margins, no header/footer, no bold or colour.
+The font/size/margin fields of `ExportOptions` are ignored by this template.
+The reference itself is private client data and is never committed.
 
-```python
-export_docx(document, ExportOptions.client(surah_names=SURAH_NAMES))
-```
+**Content rules** (learned from the reference, 26 pages):
 
-**Tashkeel in the client template.** Measured on the reference (26 pages): ordinary speech is
-vowelled only where the editor chose to (tanween such as أيضًا / إذًا / جدًّا, a few marks);
-Quran and hadith quotes and a fixed set of formulas are fully vowelled. So the template keeps
-`tashkeel="as_is"` (the editor decides) and `formulas.py` rewrites each formula to its canonical
-full form whether the input has none, partial or other marks: تَبَارَكَ وَتَعَالَى، صَلَّى اللهُ عَلَيْهِ
-وَسَلَّمَ، جَلَّ فِي عُلَاهُ، جَلَّ وَعَلَا، رَضِيَ اللهُ عَنْهَا / عَنْهُ (inferred), رَحِمَهُ اللهُ (تَعَالَى)،
-عَلَيْهِ السَّلَامُ. Quran and exact hadith are never touched. Add the client's approved formulas
-to `FORMULAS`. `ExportOptions.client(tashkeel="strip")` still strips ordinary text (formulas kept).
+- Quran `﴿text﴾ [آل عمران: 102]` and exact hadith `«text»` run inside the paragraph;
+  references use the 114 surah names (`surahs.py`) and Western digits.
+- Tashkeel is the editor's (`tashkeel="as_is"`): ordinary speech is unvowelled apart from
+  tanween and the odd mark. `formulas.py` rewrites the fixed formulas to their full vowelled
+  form whatever marks the input has: تَبَارَكَ وَتَعَالَى، صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ، جَلَّ فِي عُلَاهُ،
+  جَلَّ وَعَلَا، رَضِيَ اللهُ عَنْهَا / عَنْهُ (inferred), رَحِمَهُ اللهُ (تَعَالَى)، عَلَيْهِ السَّلَامُ.
+  Quran and exact hadith are never touched. `client(tashkeel="strip")` strips ordinary text
+  and still keeps the formulas.
+- A text block with line breaks becomes one paragraph per line (poetry; leading tabs kept);
+  a line starting with `•` / `-` / `*` becomes `•<tab>text`.
+- Footnotes (hadith by meaning / not found / takhrij) use direct 12 pt formatting; the
+  reference has none.
+- Not reproduced: the stray private-use (Wingdings) glyphs of the reference.
 
-Quran references use all 114 surah names (`surahs.py`) with Western digits: `[آل عمران: 102]`.
-A text block containing line breaks becomes one paragraph per line (poetry; leading tabs are kept);
-a line starting with `•` / `-` / `*` becomes `•<tab>text` as in the reference.
-Not reproduced: the stray Wingdings glyphs (private-use characters that show as boxes) in the reference.
+`samples/client_sample.docx` (20 pages, `scripts/make_client_sample.py`) shows all of it
+with text written for the sample. Verified by rendering both files in Microsoft Word.
