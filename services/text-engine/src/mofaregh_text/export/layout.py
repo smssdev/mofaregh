@@ -18,6 +18,7 @@ from typing import Literal, Union
 
 from mofaregh_text.arabic.diacritics import strip_tashkeel
 
+from .formulas import restore_formulas
 from .options import ExportOptions
 
 Role = Literal[
@@ -168,7 +169,10 @@ class _Builder:
     # ordinary text: policy-dependent
     def plain(self, text: str | None) -> str:
         text = _XML_INVALID.sub("", text or "")
-        return strip_tashkeel(text) if self.opt.tashkeel == "strip" else text
+        if self.opt.tashkeel != "strip":
+            return text
+        text = strip_tashkeel(text)
+        return restore_formulas(text) if self.opt.keep_formulas else text
 
     def speaker_name(self, speaker_id: str | None) -> str | None:
         if speaker_id is None:

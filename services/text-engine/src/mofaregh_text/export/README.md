@@ -137,3 +137,9 @@ names; extra overrides go through `ExportOptions.client(tashkeel="strip", ...)`.
 ```python
 export_docx(document, ExportOptions.client(surah_names=SURAH_NAMES))
 ```
+
+**Tashkeel in the client template.** Matches the reference's convention (measured: ordinary
+speech carries no vowel marks; only formulas, Quran and hadith do): `tashkeel="strip"` for
+ordinary text, then `formulas.py` re-vowels fixed formulas (تَبَارَكَ وَتَعَالَى، صَلَّى اللهُ
+عَلَيْهِ وَسَلَّمَ، جَلَّ فِي عُلَاهُ). Quran and exact hadith are never touched. Add the client's
+approved formulas to `FORMULAS`.

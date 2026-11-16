@@ -397,3 +397,15 @@ def test_client_template_matches_reference_layout(document):
 
 def render_client(document, **kw) -> Docx:
     return Docx(export_docx(document, ExportOptions.client(**kw)))
+
+
+def test_client_strips_ordinary_tashkeel_but_keeps_formulas_and_quran(document):
+    document = copy.deepcopy(document)
+    document["segments"][0]["blocks"][0] = {
+        "type": "text", "text": "قَالَ الله تبارك وتعالى وصلى الله عليه وسلم"}
+    text = render_client(document).text()
+    assert "قال الله" in text and "قَالَ الله" not in text
+    assert "تَبَارَكَ وَتَعَالَى" in text
+    assert "صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ" in text
+    for q in blocks(document, "quran"):
+        assert q["text"] in text  # locked text untouched

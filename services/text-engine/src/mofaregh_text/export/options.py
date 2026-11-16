@@ -78,6 +78,7 @@ class ExportOptions:
     footnote_size_pt: float = 11
     header_footer_size_pt: float = 10
     margins_cm: float = 2.5
+    keep_formulas: bool = False  # after tashkeel="strip", re-vowel fixed formulas (see formulas.py)
     side_margins_cm: float | None = None  # left/right; None = margins_cm
 
     def __post_init__(self) -> None:
@@ -106,6 +107,8 @@ class ExportOptions:
             quran_size_pt=18,
             hadith_size_pt=18,
             title_size_pt=18,
+            tashkeel="strip",
+            keep_formulas=True,
             reference_digits="western",
             timestamp_digits="western",
             margins_cm=2.54,
