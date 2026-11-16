@@ -2,8 +2,12 @@
 
 namespace App\Providers;
 
+use App\Services\Asr\Transcriber;
+use App\Services\Asr\WhisperTranscriber;
 use App\Services\Audio\AudioNormalizer;
 use App\Services\Audio\FfmpegAudioNormalizer;
+use App\Services\Export\DocxExporter;
+use App\Services\Export\TextEngineDocxExporter;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -20,6 +24,15 @@ class AppServiceProvider extends ServiceProvider
             config('mofaregh.audio.ffprobe'),
             (int) config('mofaregh.audio.timeout'),
         ));
+
+        $this->app->bind(Transcriber::class, fn () => new WhisperTranscriber(
+            config('mofaregh.python'),
+            (string) config('mofaregh.asr.model'),
+            (int) config('mofaregh.asr.threads'),
+            (int) config('mofaregh.asr.timeout'),
+        ));
+
+        $this->app->bind(DocxExporter::class, fn () => new TextEngineDocxExporter(config('mofaregh.python')));
     }
 
     public function boot(): void

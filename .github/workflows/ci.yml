@@ -19,6 +19,18 @@ jobs:
       - run: python -m pytest
         working-directory: services/text-engine
 
+  asr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Only the paragraph grouping is tested here; faster-whisper itself is not installed in CI.
+      - run: pip install pytest
+      - run: python -m pytest
+        working-directory: services/asr
+
   schema:
     runs-on: ubuntu-latest
     steps:

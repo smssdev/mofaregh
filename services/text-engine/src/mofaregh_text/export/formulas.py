@@ -50,7 +50,14 @@ _COMPILED = tuple(
 )
 
 
+# Quoted scripture typed straight into ordinary text (the editor has no locked
+# blocks yet): ﴿…﴾ and «…» are copied through untouched.
+_QUOTED = re.compile("(﴿[^﴾]*﴾|«[^»]*»)")
+
+
 def restore_formulas(text: str) -> str:
-    for rx, vowelled in _COMPILED:
-        text = rx.sub(lambda _m, v=vowelled: v, text)
-    return text
+    parts = _QUOTED.split(text)
+    for i in range(0, len(parts), 2):  # even indexes are outside the quotes
+        for rx, vowelled in _COMPILED:
+            parts[i] = rx.sub(lambda _m, v=vowelled: v, parts[i])
+    return "".join(parts)

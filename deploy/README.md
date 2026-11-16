@@ -56,4 +56,10 @@ migrates, caches and switches the `current` symlink in one step. It can also be 
 - Audio sits on the VPS disk (about 15 GB free at setup). Move `AUDIO_DISK` to S3-compatible storage before real
   volumes arrive.
 - SQLite is fine for a staging team; switch `DB_CONNECTION` to PostgreSQL/MySQL before production load.
-- The Python `services/text-engine` is not deployed yet; it joins when the API starts calling it for export.
+- Python: every deploy copies `services/text-engine` and `services/asr` into the release (`python/`) and
+  `activate.sh` installs them into `shared/venv`, then writes `MOFAREGH_PYTHON` to `shared/.env` once. It needs
+  `python3` (3.10+) and `python3-venv` on the server; if they are missing the deploy still succeeds and its log
+  shows a `WARN python:` line, and the editor says the feature is off.
+- ASR is Whisper on the CPU (`ASR_MODEL=medium`, `ASR_THREADS=2` in `shared/.env`). The model (about 1.5 GB) is
+  downloaded by the first transcription and needs about 2 GB of memory while it runs; an hour of audio can take
+  about as long as the audio itself. One file is transcribed at a time by the scheduler's `asr` queue worker.

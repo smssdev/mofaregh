@@ -1,0 +1,75 @@
+"""CLI the API's queue job runs:
+
+    python -m mofaregh_asr AUDIO --out result.json [--model medium] [--threads 2] [--language ar]
+
+Prints ``PROGRESS <0..1>`` lines on stdout while it works and writes
+``{"language", "duration", "model", "paragraphs": [{"start_ms", "end_ms", "text", "unclear": [...]}]}``
+to --out; ``unclear`` lists the words Whisper was unsure of with their exact times (see paragraphs.py).
+The model is downloaded on first use (Hugging Face cache of the running user).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+
+from .paragraphs import group_paragraphs
+
+# Nudges Whisper towards punctuated Modern Standard Arabic.
+INITIAL_PROMPT = "بسم الله الرحمن الرحيم. الحمد لله رب العالمين، والصلاة والسلام على رسول الله."
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="mofaregh_asr")
+    parser.add_argument("audio")
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--model", default="medium")
+    parser.add_argument("--threads", type=int, default=2)
+    parser.add_argument("--language", default="ar")
+    parser.add_argument("--compute-type", default="int8")
+    parser.add_argument("--unclear-below", type=float, default=0.5,
+                        help="words with a lower probability are reported as unclear, with their times")
+    args = parser.parse_args(argv)
+
+    from faster_whisper import WhisperModel  # imported late: heavy, and absent in unit tests
+
+    model = WhisperModel(args.model, device="cpu", compute_type=args.compute_type, cpu_threads=args.threads)
+    segments, info = model.transcribe(
+        args.audio,
+        language=args.language,
+        beam_size=5,
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 700},
+        initial_prompt=INITIAL_PROMPT,
+        word_timestamps=True,  # exact times (and confidence) of every word, for the "unclear" marks
+        condition_on_previous_text=False,  # stops one bad stretch from derailing the rest of a long lecture
+    )
+    duration = float(info.duration or 0)
+    collected = []
+    last = -1.0
+    for seg in segments:
+        collected.append({
+            "start": seg.start, "end": seg.end, "text": seg.text,
+            "words": [{"start": w.start, "end": w.end, "word": w.word, "probability": w.probability}
+                      for w in (seg.words or [])],
+        })
+        done = min(1.0, seg.end / duration) if duration else 0.0
+        if done - last >= 0.01:
+            last = done
+            print(f"PROGRESS {done:.3f}", flush=True)
+
+    result = {
+        "language": info.language,
+        "duration": duration,
+        "model": args.model,
+        "paragraphs": group_paragraphs(collected, unclear_below=args.unclear_below),
+    }
+    with open(args.out, "w", encoding="utf-8") as fh:
+        json.dump(result, fh, ensure_ascii=False)
+    print("PROGRESS 1.000", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

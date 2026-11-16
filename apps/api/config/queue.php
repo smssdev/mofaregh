@@ -44,6 +44,17 @@ return [
             'after_commit' => false,
         ],
 
+        // Long-running speech recognition. Same jobs table, its own queue name and a retry_after longer than
+        // any transcription, so a job that is still running is never handed to a second worker.
+        'asr' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'asr',
+            'retry_after' => (int) env('ASR_TIMEOUT', 6 * 3600) + 600,
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),

@@ -90,6 +90,9 @@ jobs:
             --exclude='node_modules/' --exclude='tests/' --exclude='storage/' --exclude='.env' \
             --exclude='database/*.sqlite' \
             apps/api/ "$SSH_USER@$SSH_HOST:$release/"
+          # The Python packages the API runs (Word export, ASR); activate.sh installs them into shared/venv.
+          $ssh "$SSH_USER@$SSH_HOST" "mkdir -p '$release/python'"
+          rsync -az --delete -e "$ssh"             --exclude='tests/' --exclude='samples/' --exclude='scripts/' --exclude='__pycache__/' --exclude='*.egg-info/'             services/text-engine services/asr "$SSH_USER@$SSH_HOST:$release/python/"
           $ssh "$SSH_USER@$SSH_HOST" "cd '$release' && APP_DIR='$APP_DIR' bash -s" < deploy/activate.sh
 
       - name: Check the site answers

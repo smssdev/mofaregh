@@ -21,4 +21,17 @@ return [
         'timeout' => (int) env('AUDIO_NORMALIZE_TIMEOUT', 1800),
     ],
 
+    // Python of the server's virtualenv (shared/venv/bin/python), which has services/text-engine and
+    // services/asr installed. deploy/activate.sh creates it and writes this setting; empty = both features off.
+    'python' => env('MOFAREGH_PYTHON'),
+
+    'asr' => [
+        // faster-whisper model: small (fast, weaker), medium (default), large-v3 (best, heavy on a CPU).
+        'model' => env('ASR_MODEL', 'medium'),
+        // CPU threads Whisper may use. The VPS is shared with other sites: keep this below the core count.
+        'threads' => (int) env('ASR_THREADS', 2),
+        // Seconds one file may take (default 6 hours: a long lecture on two threads).
+        'timeout' => (int) env('ASR_TIMEOUT', 6 * 3600),
+    ],
+
 ];

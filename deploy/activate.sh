@@ -20,6 +20,33 @@ ln -sfn "$APP_DIR/shared/storage" "$RELEASE/storage"
 mkdir -p "$RELEASE/bootstrap/cache"
 chmod -R g+w "$RELEASE/bootstrap/cache"
 
+# Python side (Word export through the client template, and Whisper for the automatic draft): one virtualenv
+# shared by every release. Nothing here may stop a deploy: without it the app runs and says the feature is off.
+VENV="$APP_DIR/shared/venv"
+setup_python() {
+    [ -d "$RELEASE/python" ] || return 0
+    command -v python3 >/dev/null || { echo "WARN python: python3 is not installed; Word export and ASR stay off."; return 0; }
+    if [ ! -x "$VENV/bin/python" ]; then
+        python3 -m venv "$VENV" || { echo "WARN python: could not create $VENV (apt install python3-venv)."; return 0; }
+    fi
+    "$VENV/bin/pip" install --quiet --upgrade pip || true
+
+    # First the dependencies, then our own code again: the version number does not change between deploys.
+    if "$VENV/bin/pip" install --quiet "$RELEASE/python/text-engine"         && "$VENV/bin/pip" install --quiet --force-reinstall --no-deps "$RELEASE/python/text-engine"         && "$VENV/bin/python" -c "import mofaregh_text.cli"; then
+        grep -q '^MOFAREGH_PYTHON=' "$APP_DIR/shared/.env" || echo "MOFAREGH_PYTHON=$VENV/bin/python" >> "$APP_DIR/shared/.env"
+        echo "python: Word export ready ($("$VENV/bin/python" --version))"
+    else
+        echo "WARN python: text-engine did not install; Word export stays off."
+    fi
+
+    if "$VENV/bin/pip" install --quiet "$RELEASE/python/asr"         && "$VENV/bin/pip" install --quiet --force-reinstall --no-deps "$RELEASE/python/asr"         && "$VENV/bin/python" -c "import faster_whisper, mofaregh_asr"; then
+        echo "python: ASR ready (model is downloaded on the first transcription)"
+    else
+        echo "WARN python: ASR (faster-whisper) did not install; automatic drafts will fail until it does."
+    fi
+}
+setup_python || echo "WARN python: setup failed, continuing."
+
 php artisan migrate --force --no-interaction
 php artisan optimize
 
