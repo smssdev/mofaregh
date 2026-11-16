@@ -26,10 +26,15 @@ VENV="$APP_DIR/shared/venv"
 setup_python() {
     [ -d "$RELEASE/python" ] || return 0
     command -v python3 >/dev/null || { echo "WARN python: python3 is not installed; Word export and ASR stay off."; return 0; }
-    if [ ! -x "$VENV/bin/python" ]; then
-        python3 -m venv "$VENV" || { echo "WARN python: could not create $VENV (apt install python3-venv)."; return 0; }
+    if [ ! -x "$VENV/bin/pip" ]; then
+        # Debian/Ubuntu ship ensurepip in python3-venv, which needs root to install. Without it, build the
+        # virtualenv without pip and bootstrap pip from PyPA's own installer (no root needed).
+        if ! python3 -m venv --clear "$VENV" >/dev/null 2>&1; then
+            python3 -m venv --clear --without-pip "$VENV"                 && curl -fsSL https://bootstrap.pypa.io/get-pip.py -o "$VENV/get-pip.py"                 && "$VENV/bin/python" "$VENV/get-pip.py" --quiet                 || { echo "WARN python: could not create $VENV (apt install python3-venv)."; return 0; }
+            rm -f "$VENV/get-pip.py"
+        fi
     fi
-    "$VENV/bin/pip" install --quiet --upgrade pip || true
+    "$VENV/bin/python" -m pip install --quiet --upgrade pip || true
 
     # First the dependencies, then our own code again: the version number does not change between deploys.
     if "$VENV/bin/pip" install --quiet "$RELEASE/python/text-engine"         && "$VENV/bin/pip" install --quiet --force-reinstall --no-deps "$RELEASE/python/text-engine"         && "$VENV/bin/python" -c "import mofaregh_text.cli"; then
