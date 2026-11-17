@@ -2,7 +2,8 @@
 /**
  * Transcription player: speed without pitch change, short/long skips, automatic rewind on resume, A-B loop,
  * volume boost and a speech filter through Web Audio, pause-while-typing, and a remembered position per file.
- * It has no keyboard handling of its own: the editor page maps shortcuts to the methods exposed below.
+ * It sits in the editor's side panel; the toolbar above the text repeats its main controls through the methods
+ * and state exposed below. It has no keyboard handling of its own: the editor page maps shortcuts to it.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { formatClock, parseClock } from '@/lib/shortcuts'
@@ -17,7 +18,7 @@ const props = defineProps<{
 const emit = defineEmits<{ time: [ms: number] }>()
 
 const SETTINGS_KEY = 'mofaregh.player'
-const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]
+const QUICK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
 const MIN_RATE = 0.25
 const MAX_RATE = 3
 const MAX_VOLUME = 3
@@ -30,12 +31,6 @@ const settings = reactive({
   pauseWhileTyping: false,
   enhance: false,
   preservePitch: true,
-  // Where the panel sits: docked above or below the page, or floating over it (dragged, resized).
-  dock: 'top' as 'top' | 'bottom' | 'float',
-  compact: false,
-  x: 24,
-  y: 96,
-  width: 760,
 })
 
 try {
@@ -46,7 +41,6 @@ try {
 } catch {
   // corrupt settings: keep the defaults
 }
-if (!['top', 'bottom', 'float'].includes(settings.dock)) settings.dock = 'top'
 settings.rate = clamp(settings.rate, MIN_RATE, MAX_RATE)
 settings.volume = clamp(settings.volume, 0, MAX_VOLUME)
 
@@ -72,66 +66,6 @@ const loopLabel = computed(() => (loopA.value === null ? 'تكرار مقطع' :
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
-}
-
-// --- panel placement: docked or floating -----------------------------------------------------------------
-const MIN_WIDTH = 300
-const root = ref<HTMLElement | null>(null)
-const floating = computed(() => settings.dock === 'float')
-const panelStyle = computed(() => (floating.value ? { left: `${settings.x}px`, top: `${settings.y}px`, width: `${settings.width}px` } : {}))
-
-/** Keeps the floating panel fully inside the window (after a drag, a resize, or the window shrinking). */
-function keepInside(): void {
-  settings.width = clamp(settings.width, MIN_WIDTH, Math.max(MIN_WIDTH, window.innerWidth - 16))
-  const height = root.value?.offsetHeight ?? 120
-  settings.x = clamp(settings.x, 8, Math.max(8, window.innerWidth - settings.width - 8))
-  settings.y = clamp(settings.y, 8, Math.max(8, window.innerHeight - height - 8))
-}
-
-function setDock(dock: 'top' | 'bottom' | 'float'): void {
-  settings.dock = dock
-  if (dock === 'float') void nextTick(keepInside)
-}
-
-let drag: { kind: 'move' | 'resize'; startX: number; startY: number; x: number; y: number; width: number } | null = null
-
-function startDrag(kind: 'move' | 'resize', event: PointerEvent): void {
-  if (!floating.value) return
-  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-  drag = { kind, startX: event.clientX, startY: event.clientY, x: settings.x, y: settings.y, width: settings.width }
-  event.preventDefault()
-}
-
-function onDrag(event: PointerEvent): void {
-  if (!drag) return
-  const dx = event.clientX - drag.startX
-  if (drag.kind === 'move') {
-    settings.x = drag.x + dx
-    settings.y = drag.y + (event.clientY - drag.startY)
-  } else {
-    // The grip is on the left edge: dragging it left widens the panel and moves its left side with it.
-    const width = clamp(drag.width - dx, MIN_WIDTH, window.innerWidth - 16)
-    settings.x = drag.x + (drag.width - width)
-    settings.width = width
-  }
-  keepInside()
-}
-
-function endDrag(): void {
-  drag = null
-}
-
-/** Arrow keys move the floating panel when its handle has focus (Shift: bigger steps). */
-function onHandleKey(event: KeyboardEvent): void {
-  const step = event.shiftKey ? 60 : 15
-  const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
-  const move = moves[event.key]
-  if (!move) return
-  settings.x += move[0]
-  settings.y += move[1]
-  keepInside()
-  event.preventDefault()
-  event.stopPropagation()
 }
 
 // --- Web Audio: boost above 100% and the speech filter -------------------------------------------------------
@@ -278,6 +212,11 @@ defineExpose({
   typing,
   currentTime: () => audio.value?.currentTime ?? 0,
   skip: () => settings.skip,
+  // Read by the editor's toolbar, which repeats the main controls above the text.
+  playing,
+  current,
+  duration,
+  rate: computed(() => settings.rate),
 })
 
 // --- element events ----------------------------------------------------------------------------------------
@@ -375,12 +314,9 @@ watch(
 onMounted(() => {
   applyRate()
   applyVolume()
-  if (floating.value) keepInside()
-  window.addEventListener('resize', keepInside)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', keepInside)
   window.clearTimeout(typingTimer)
   rememberPosition()
   void context?.close()
@@ -388,53 +324,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="root"
-    class="player select-none bg-slate-900 text-slate-100"
-    :class="{
-      'fixed z-40 overflow-hidden rounded-xl shadow-2xl ring-1 ring-black/40': floating,
-      'order-last': settings.dock === 'bottom',
-    }"
-    :style="panelStyle"
-    dir="ltr"
-  >
-    <!-- Panel bar: move, minimise, dock -->
-    <div class="flex items-center gap-1 bg-slate-950/60 px-2 py-1 text-xs" dir="rtl">
-      <button
-        v-if="floating"
-        class="cursor-move touch-none rounded px-2 py-0.5 text-slate-300 hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-brand-500"
-        title="اسحب لتحريك اللوحة (أو استعمل الأسهم)"
-        aria-label="تحريك لوحة المشغّل"
-        @pointerdown="startDrag('move', $event)"
-        @pointermove="onDrag"
-        @pointerup="endDrag"
-        @pointercancel="endDrag"
-        @keydown="onHandleKey"
-      >
-        ⠿ تحريك
-      </button>
-      <span class="text-slate-400">المشغّل</span>
-      <span class="ms-auto flex items-center gap-1">
-        <button class="pmini" :class="{ 'pmini-on': settings.compact }" :aria-pressed="settings.compact" :title="settings.compact ? 'إظهار كل أدوات التحكم' : 'إبقاء أزرار التشغيل والوقت فقط'" @click="((settings.compact = !settings.compact), floating && nextTick(keepInside))">
-          {{ settings.compact ? 'تكبير' : 'تصغير' }}
-        </button>
-        <span class="mx-1 h-4 w-px bg-slate-700" />
-        <button class="pmini" :class="{ 'pmini-on': settings.dock === 'top' }" :aria-pressed="settings.dock === 'top'" title="تثبيت اللوحة أعلى الصفحة" @click="setDock('top')">أعلى</button>
-        <button class="pmini" :class="{ 'pmini-on': settings.dock === 'bottom' }" :aria-pressed="settings.dock === 'bottom'" title="تثبيت اللوحة أسفل الصفحة" @click="setDock('bottom')">أسفل</button>
-        <button class="pmini" :class="{ 'pmini-on': floating }" :aria-pressed="floating" title="لوحة عائمة فوق النص تُسحب ويُغيَّر عرضها" @click="setDock('float')">عائمة</button>
-      </span>
-    </div>
-    <div
-      v-if="floating"
-      class="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none hover:bg-brand-500/60"
-      title="اسحب لتغيير عرض اللوحة"
-      aria-hidden="true"
-      @pointerdown="startDrag('resize', $event)"
-      @pointermove="onDrag"
-      @pointerup="endDrag"
-      @pointercancel="endDrag"
-    />
-
+  <section class="player select-none rounded-2xl bg-slate-900 p-4 text-slate-100 shadow-sm" aria-label="مشغّل الصوت">
     <audio
       ref="audio"
       :src="src"
@@ -451,10 +341,34 @@ onBeforeUnmount(() => {
       @error="failed = true"
     />
 
+    <!-- Big clock: click to type a time and jump to it -->
+    <div class="tabular flex items-baseline justify-center gap-2" dir="ltr">
+      <input
+        v-if="jumping"
+        ref="jumpInput"
+        v-model="jumpText"
+        class="w-36 rounded-lg bg-slate-800 px-2 py-1 text-center text-3xl font-semibold text-white outline-none ring-2 ring-brand-500"
+        aria-label="انتقال إلى وقت"
+        @keydown.enter.prevent="finishJump"
+        @keydown.esc.stop.prevent="jumping = false"
+        @blur="finishJump"
+      />
+      <button v-else class="rounded-lg px-2 text-3xl font-semibold tracking-wide hover:bg-slate-800" title="اكتب وقتًا للانتقال إليه" @click="startJump">
+        {{ formatClock(current) }}
+      </button>
+      <span class="text-sm text-slate-400">/ {{ formatClock(duration) }}</span>
+    </div>
+    <p class="mt-0.5 h-4 text-center text-xs" role="status">
+      <span v-if="failed" class="text-red-400">تعذّر تشغيل الصوت</span>
+      <span v-else-if="loading && playing" class="text-amber-300">تحميل…</span>
+      <span v-else-if="loopA !== null" class="text-amber-300">{{ loopB === null ? 'حدِّد نهاية المقطع المكرَّر' : 'يكرّر المقطع' }}</span>
+    </p>
+
     <!-- Seek bar -->
     <div
       ref="bar"
-      class="group relative h-3 cursor-pointer bg-slate-700"
+      class="group relative mt-2 h-3 cursor-pointer rounded-full bg-slate-700"
+      dir="ltr"
       role="slider"
       tabindex="0"
       aria-label="موضع التشغيل"
@@ -467,8 +381,9 @@ onBeforeUnmount(() => {
       @pointerleave="hover = null"
       @keydown="onBarKey"
     >
-      <div class="absolute inset-y-0 left-0 bg-slate-500/60" :style="{ width: `${buffered}%` }" />
-      <div class="absolute inset-y-0 left-0 bg-brand-500" :style="{ width: `${progress}%` }" />
+      <div class="absolute inset-y-0 left-0 rounded-full bg-slate-500/60" :style="{ width: `${buffered}%` }" />
+      <div class="absolute inset-y-0 left-0 rounded-full bg-brand-500" :style="{ width: `${progress}%` }" />
+      <div class="absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow ring-2 ring-brand-500" :style="{ left: `${progress}%` }" />
       <div
         v-if="loopA !== null && duration > 0"
         class="absolute inset-y-0 border-l-2 border-amber-400 bg-amber-400/30"
@@ -476,110 +391,84 @@ onBeforeUnmount(() => {
       />
       <div
         v-if="hover"
-        class="tabular pointer-events-none absolute -top-7 -translate-x-1/2 rounded bg-black px-1.5 py-0.5 text-xs text-white"
+        class="tabular pointer-events-none absolute -top-8 z-10 -translate-x-1/2 rounded bg-black px-1.5 py-0.5 text-xs text-white"
         :style="{ left: `${hover.x}px` }"
       >
         {{ formatClock(hover.time) }}
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
-      <!-- Transport -->
-      <div class="flex items-center gap-1">
-        <button class="pbtn" title="رجوع ٣٠ ثانية" aria-label="رجوع ٣٠ ثانية" @click="seekBy(-30)">
-          <svg viewBox="0 0 24 24" class="size-5" fill="currentColor"><path d="M11 18V6l-8.5 6zm.5-6 8.5 6V6z" /></svg>
-        </button>
-        <button class="pbtn tabular text-xs" :title="`رجوع ${settings.skip} ثوانٍ`" :aria-label="`رجوع ${settings.skip} ثوانٍ`" @click="seekBy(-settings.skip)">
-          <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
-          {{ settings.skip }}
-        </button>
+    <!-- Transport -->
+    <div class="mt-4 flex items-center justify-center gap-2" dir="ltr">
+      <button class="pbtn" title="رجوع ٣٠ ثانية" aria-label="رجوع ٣٠ ثانية" @click="seekBy(-30)">
+        <svg viewBox="0 0 24 24" class="size-5" fill="currentColor"><path d="M11 18V6l-8.5 6zm.5-6 8.5 6V6z" /></svg>
+      </button>
+      <button class="pbtn tabular" :title="`رجوع ${settings.skip} ثوانٍ`" :aria-label="`رجوع ${settings.skip} ثوانٍ`" @click="seekBy(-settings.skip)">
+        <svg viewBox="0 0 24 24" class="size-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+        <span class="text-xs">{{ settings.skip }}</span>
+      </button>
+      <button
+        class="grid size-14 place-items-center rounded-full bg-brand-500 text-white shadow-lg hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        :title="playing ? 'إيقاف مؤقت' : 'تشغيل'"
+        :aria-label="playing ? 'إيقاف مؤقت' : 'تشغيل'"
+        @click="toggle"
+      >
+        <svg v-if="playing" viewBox="0 0 24 24" class="size-7" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>
+        <svg v-else viewBox="0 0 24 24" class="size-7 translate-x-0.5" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+      </button>
+      <button class="pbtn tabular" :title="`تقديم ${settings.skip} ثوانٍ`" :aria-label="`تقديم ${settings.skip} ثوانٍ`" @click="seekBy(settings.skip)">
+        <span class="text-xs">{{ settings.skip }}</span>
+        <svg viewBox="0 0 24 24" class="size-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>
+      </button>
+      <button class="pbtn" title="تقديم ٣٠ ثانية" aria-label="تقديم ٣٠ ثانية" @click="seekBy(30)">
+        <svg viewBox="0 0 24 24" class="size-5" fill="currentColor"><path d="m4 18 8.5-6L4 6zm9-12v12l8.5-6z" /></svg>
+      </button>
+    </div>
+
+    <!-- Speed: one tap presets, plus fine steps -->
+    <div class="mt-4">
+      <div class="mb-1 flex items-center justify-between text-xs text-slate-400">
+        <span>السرعة</span>
+        <span class="tabular text-slate-200" dir="ltr">{{ settings.rate.toFixed(2).replace(/0$/, '') }}×</span>
+      </div>
+      <div class="flex items-center gap-1" dir="ltr">
+        <button class="pbtn h-7 min-w-7 px-1" title="إبطاء" aria-label="إبطاء" @click="changeRate(-0.05)">−</button>
         <button
-          class="grid size-11 place-items-center rounded-full bg-brand-600 text-white hover:bg-brand-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-          :title="playing ? 'إيقاف مؤقت' : 'تشغيل'"
-          :aria-label="playing ? 'إيقاف مؤقت' : 'تشغيل'"
-          @click="toggle"
+          v-for="rate in QUICK_RATES"
+          :key="rate"
+          class="tabular h-7 flex-1 rounded-md text-xs"
+          :class="settings.rate === rate ? 'bg-brand-500 font-semibold text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'"
+          :aria-pressed="settings.rate === rate"
+          @click="setRate(rate)"
         >
-          <svg v-if="playing" viewBox="0 0 24 24" class="size-6" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>
-          <svg v-else viewBox="0 0 24 24" class="size-6" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+          {{ rate }}×
         </button>
-        <button class="pbtn tabular text-xs" :title="`تقديم ${settings.skip} ثوانٍ`" :aria-label="`تقديم ${settings.skip} ثوانٍ`" @click="seekBy(settings.skip)">
-          {{ settings.skip }}
-          <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>
-        </button>
-        <button class="pbtn" title="تقديم ٣٠ ثانية" aria-label="تقديم ٣٠ ثانية" @click="seekBy(30)">
-          <svg viewBox="0 0 24 24" class="size-5" fill="currentColor"><path d="m4 18 8.5-6L4 6zm9-12v12l8.5-6z" /></svg>
-        </button>
-      </div>
-
-      <!-- Clock -->
-      <div class="tabular flex items-center gap-1 text-sm">
-        <input
-          v-if="jumping"
-          ref="jumpInput"
-          v-model="jumpText"
-          class="w-24 rounded bg-slate-800 px-1 py-0.5 text-center text-sm text-white outline-none ring-1 ring-brand-500"
-          aria-label="انتقال إلى وقت"
-          @keydown.enter.prevent="finishJump"
-          @keydown.esc.stop.prevent="jumping = false"
-          @blur="finishJump"
-        />
-        <button v-else class="rounded px-1 py-0.5 hover:bg-slate-800" title="اكتب وقتًا للانتقال إليه" @click="startJump">{{ formatClock(current) }}</button>
-        <span class="text-slate-400">/ {{ formatClock(duration) }}</span>
-        <span v-if="loading && playing" class="text-xs text-amber-300" role="status">تحميل…</span>
-        <span v-if="failed" class="text-xs text-red-400" role="alert">تعذّر تشغيل الصوت</span>
-      </div>
-
-      <!-- Speed -->
-      <div v-show="!settings.compact" class="flex items-center gap-1" dir="rtl">
-        <span class="text-xs text-slate-400">السرعة</span>
-        <button class="pbtn" title="إبطاء" aria-label="إبطاء" @click="changeRate(-0.1)">−</button>
-        <select
-          class="tabular rounded bg-slate-800 px-1 py-1 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-brand-500"
-          aria-label="سرعة التشغيل"
-          :value="settings.rate"
-          @change="setRate(Number(($event.target as HTMLSelectElement).value))"
-        >
-          <option v-if="!RATES.includes(settings.rate)" :value="settings.rate">{{ settings.rate.toFixed(2) }}×</option>
-          <option v-for="rate in RATES" :key="rate" :value="rate">{{ rate }}×</option>
-        </select>
-        <button class="pbtn" title="تسريع" aria-label="تسريع" @click="changeRate(0.1)">+</button>
-      </div>
-
-      <!-- Volume -->
-      <label v-show="!settings.compact" class="flex items-center gap-2" dir="rtl">
-        <span class="text-xs text-slate-400">الصوت</span>
-        <input
-          v-model.number="settings.volume"
-          type="range"
-          min="0"
-          :max="MAX_VOLUME"
-          step="0.05"
-          class="w-24 accent-brand-500"
-          dir="ltr"
-          aria-label="مستوى الصوت (حتى ٣٠٠٪)"
-        />
-        <span class="tabular w-10 text-xs" :class="settings.volume > 1 ? 'text-amber-300' : 'text-slate-300'">{{ Math.round(settings.volume * 100) }}%</span>
-      </label>
-
-      <div v-show="!settings.compact" class="flex items-center gap-1" dir="rtl">
-        <button class="pchip" :class="{ 'pchip-on': loopA !== null }" :title="'يكرّر المقطع بين نقطتين: ' + loopLabel" @click="cycleLoop">
-          {{ loopLabel }}
-        </button>
-        <button class="pchip" :class="{ 'pchip-on': settings.enhance }" title="يزيل الطنين ويرفع الكلام الخافت" :aria-pressed="settings.enhance" @click="settings.enhance = !settings.enhance">
-          توضيح الكلام
-        </button>
-        <button class="pchip" :class="{ 'pchip-on': settingsOpen }" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen">إعدادات المشغّل</button>
+        <button class="pbtn h-7 min-w-7 px-1" title="تسريع" aria-label="تسريع" @click="changeRate(0.05)">+</button>
       </div>
     </div>
 
-    <div v-if="settingsOpen && !settings.compact" class="grid gap-x-6 gap-y-3 border-t border-slate-700 px-4 py-3 text-sm sm:grid-cols-2 lg:grid-cols-4" dir="rtl">
+    <!-- Volume -->
+    <label class="mt-3 flex items-center gap-2">
+      <span class="w-12 text-xs text-slate-400">الصوت</span>
+      <input v-model.number="settings.volume" type="range" min="0" :max="MAX_VOLUME" step="0.05" class="flex-1 accent-brand-500" dir="ltr" aria-label="مستوى الصوت (حتى ٣٠٠٪)" />
+      <span class="tabular w-10 text-end text-xs" :class="settings.volume > 1 ? 'text-amber-300' : 'text-slate-300'">{{ Math.round(settings.volume * 100) }}%</span>
+    </label>
+
+    <!-- Tools -->
+    <div class="mt-3 flex flex-wrap gap-1.5">
+      <button class="pchip" :class="{ 'pchip-on': loopA !== null }" :title="'يكرّر المقطع بين نقطتين: ' + loopLabel" @click="cycleLoop">{{ loopLabel }}</button>
+      <button class="pchip" :class="{ 'pchip-on': settings.enhance }" title="يزيل الطنين ويرفع الكلام الخافت" :aria-pressed="settings.enhance" @click="settings.enhance = !settings.enhance">توضيح الكلام</button>
+      <button class="pchip" :class="{ 'pchip-on': settingsOpen }" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen">إعدادات</button>
+    </div>
+
+    <div v-if="settingsOpen" class="mt-3 space-y-2 border-t border-slate-700 pt-3 text-sm">
       <label class="flex items-center justify-between gap-2">
-        <span>مدة القفز القصير (ثوانٍ)</span>
-        <input v-model.number="settings.skip" type="number" min="1" max="60" class="tabular w-16 rounded bg-slate-800 px-2 py-1 text-white" />
+        <span>القفز القصير (ثوانٍ)</span>
+        <input v-model.number="settings.skip" type="number" min="1" max="60" class="tabular w-16 rounded bg-slate-800 px-2 py-0.5 text-white" />
       </label>
       <label class="flex items-center justify-between gap-2">
-        <span>رجوع تلقائي عند الاستئناف (ثوانٍ)</span>
-        <input v-model.number="settings.rewindOnResume" type="number" min="0" max="10" step="0.5" class="tabular w-16 rounded bg-slate-800 px-2 py-1 text-white" />
+        <span>رجوع عند الاستئناف (ثوانٍ)</span>
+        <input v-model.number="settings.rewindOnResume" type="number" min="0" max="10" step="0.5" class="tabular w-16 rounded bg-slate-800 px-2 py-0.5 text-white" />
       </label>
       <label class="flex items-center gap-2">
         <input v-model="settings.pauseWhileTyping" type="checkbox" class="size-4 accent-brand-500" />
@@ -587,28 +476,22 @@ onBeforeUnmount(() => {
       </label>
       <label class="flex items-center gap-2">
         <input v-model="settings.preservePitch" type="checkbox" class="size-4 accent-brand-500" />
-        <span>الحفاظ على نبرة الصوت عند تغيير السرعة</span>
+        <span>الحفاظ على النبرة عند تغيير السرعة</span>
       </label>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
 @reference "../../style.css";
 
 .pbtn {
-  @apply inline-flex min-w-8 items-center justify-center gap-0.5 rounded px-1.5 py-1.5 text-slate-200 hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-brand-500;
+  @apply inline-flex h-10 min-w-10 items-center justify-center gap-0.5 rounded-full text-slate-200 hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-brand-500;
 }
 .pchip {
   @apply rounded-full border border-slate-600 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-brand-500;
 }
 .pchip-on {
   @apply border-brand-500 bg-brand-700 text-white;
-}
-.pmini {
-  @apply rounded px-2 py-0.5 text-slate-300 hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-brand-500;
-}
-.pmini-on {
-  @apply bg-brand-700 text-white;
 }
 </style>

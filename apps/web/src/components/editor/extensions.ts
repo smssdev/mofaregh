@@ -12,13 +12,18 @@ import { ALL_CORRECTIONS, FORMULAS, correctText, stripTashkeel } from '@/lib/aut
 import type { CorrectOptions } from '@/lib/autocorrect'
 import { formatClock } from '@/lib/shortcuts'
 
-/** A paragraph that may carry the audio position (ms) it was spoken at; drafts from ASR set it. */
+/**
+ * A paragraph that may carry the audio position (ms) it was spoken at; drafts from ASR set it, and so does
+ * pressing Enter while the audio plays (see stampParagraph). Its time is shown above it.
+ */
 export const TimedParagraph = Paragraph.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
       start: {
         default: null,
+        // Enter starts a new paragraph that was spoken later: it must not inherit this one's time.
+        keepOnSplit: false,
         parseHTML: (element) => {
           const value = element.getAttribute('data-start')
           return value === null || value === '' ? null : Number(value)
@@ -26,7 +31,11 @@ export const TimedParagraph = Paragraph.extend({
         renderHTML: (attributes) =>
           attributes.start === null || attributes.start === undefined
             ? {}
-            : { 'data-start': String(attributes.start), title: `${formatClock(attributes.start / 1000)} · Alt + نقرة للانتقال إلى هذا الموضع` },
+            : {
+                'data-start': String(attributes.start),
+                // Shown above the paragraph (CSS ::before); clicking it plays the audio from there.
+                'data-time': formatClock(attributes.start / 1000).replace(/^00:/, ''),
+              },
       },
     }
   },
@@ -278,4 +287,28 @@ export function replaceMatches(editor: Editor, matches: Match[], replacement: st
     else tr.insertText(replacement, match.from, match.to)
   }
   editor.view.dispatch(tr)
+}
+
+/** Gives the paragraph at the cursor the current audio time, if it has none yet. */
+export function stampParagraph(editor: Editor, ms: number): void {
+  const { $from } = editor.state.selection
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth)
+    if (node.type.name !== 'paragraph') continue
+    if (node.attrs.start !== null && node.attrs.start !== undefined) return
+    const pos = $from.before(depth)
+    editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'start', Math.max(0, Math.round(ms))))
+    return
+  }
+}
+
+/** Removes the time of the paragraph at the cursor. */
+export function clearParagraphTime(editor: Editor): void {
+  const { $from } = editor.state.selection
+  for (let depth = $from.depth; depth > 0; depth--) {
+    if ($from.node(depth).type.name === 'paragraph') {
+      editor.view.dispatch(editor.state.tr.setNodeAttribute($from.before(depth), 'start', null))
+      return
+    }
+  }
 }
