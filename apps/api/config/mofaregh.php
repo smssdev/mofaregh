@@ -21,6 +21,16 @@ return [
         'timeout' => (int) env('AUDIO_NORMALIZE_TIMEOUT', 1800),
     ],
 
+    'backup' => [
+        // Where mofaregh:backup writes the nightly database snapshots. On the server: shared/backups (outside every
+        // release, never served). Point it at a mounted second disk or synced folder for off-server copies.
+        'dir' => env('BACKUP_DIR', storage_path('app/backups')),
+        'keep_days' => (int) env('BACKUP_KEEP_DAYS', 14),
+        // Optional: a folder the audio is mirrored into (new files only). Empty = audio is not copied; it is large
+        // and a copy on the same disk does not survive losing the server, so set this to another disk or mount.
+        'audio_dir' => env('BACKUP_AUDIO_DIR', ''),
+    ],
+
     // Python of the server's virtualenv (shared/venv/bin/python), which has services/text-engine and
     // services/asr installed. deploy/activate.sh creates it and writes this setting; empty = both features off.
     'python' => env('MOFAREGH_PYTHON'),

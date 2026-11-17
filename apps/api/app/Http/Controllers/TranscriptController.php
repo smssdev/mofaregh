@@ -8,6 +8,7 @@ use App\Http\Resources\TranscriptResource;
 use App\Jobs\TranscribeAudio;
 use App\Models\AudioFile;
 use App\Models\Transcript;
+use App\Models\TranscriptVersion;
 use App\Services\Asr\Transcriber;
 use App\Services\Export\DocxExporter;
 use App\Services\Export\EditorText;
@@ -68,7 +69,10 @@ class TranscriptController extends Controller
             ], 409);
         }
 
-        return $this->resource($transcript->fresh());
+        $transcript = $transcript->fresh();
+        TranscriptVersion::record($transcript, $request->user()->id);
+
+        return $this->resource($transcript);
     }
 
     /** Queues the automatic draft. The result lands in asr.paragraphs; the editor decides where to put it. */

@@ -18,3 +18,6 @@ Schedule::command('queue:work asr --stop-when-empty --tries=1 --timeout='.((int)
 
 // Unfinished uploads older than a week are abandoned: free their disk space.
 Schedule::command('mofaregh:prune-uploads --days=7')->daily();
+
+// Nightly database snapshot (and audio mirror when BACKUP_AUDIO_DIR is set); deploys also take one before migrating.
+Schedule::command('mofaregh:backup --reason=daily')->dailyAt('03:15')->withoutOverlapping(120);

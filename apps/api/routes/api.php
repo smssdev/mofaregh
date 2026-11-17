@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProofingRuleController;
 use App\Http\Controllers\TranscriptController;
+use App\Http\Controllers\TranscriptVersionController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,6 +36,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     Route::put('/audio-files/{audioFile}/transcript', [TranscriptController::class, 'update']);
     Route::post('/audio-files/{audioFile}/transcript/transcribe', [TranscriptController::class, 'transcribe']);
     Route::get('/audio-files/{audioFile}/transcript/export', [TranscriptController::class, 'export']);
+    Route::get('/audio-files/{audioFile}/transcript/versions', [TranscriptVersionController::class, 'index']);
+    Route::get('/audio-files/{audioFile}/transcript/versions/{version}', [TranscriptVersionController::class, 'show']);
+    Route::post('/audio-files/{audioFile}/transcript/versions/{version}/restore', [TranscriptVersionController::class, 'restore']);
 
     Route::get('/audio-files/{audioFile}/upload', [AudioUploadController::class, 'offset']);
     Route::patch('/audio-files/{audioFile}/upload', [AudioUploadController::class, 'append'])->withoutMiddleware('throttle:api');
