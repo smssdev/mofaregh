@@ -6,6 +6,7 @@ use App\Enums\AsrStatus;
 use App\Models\Transcript;
 use App\Services\Asr\AsrFailed;
 use App\Services\Asr\Transcriber;
+use App\Services\Asr\WhisperTranscriber;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Number;
@@ -37,7 +38,9 @@ class AsrCheck extends Command
                 : 'FAILED '.Str::limit(trim($probe->getErrorOutput()), 300)));
         }
 
-        $this->line('asr: model '.config('mofaregh.asr.model').', '.config('mofaregh.asr.threads').' threads, dir '.$this->modelDirSummary());
+        $usable = $transcriber instanceof WhisperTranscriber ? $transcriber->usableModelDir() : config('mofaregh.asr.model_dir');
+        $this->line('asr: model '.config('mofaregh.asr.model').', '.config('mofaregh.asr.threads').' threads, dir '
+            .($usable === null ? 'NOT WRITABLE ('.config('mofaregh.asr.model_dir').'), falling back to ~/.cache/huggingface' : $this->modelDirSummary()));
         $this->line('asr: server '.$this->serverSummary());
         $this->line('asr: scheduler '.$this->schedulerSummary());
         $this->queueSummary();
@@ -70,7 +73,7 @@ class AsrCheck extends Command
         if (is_readable('/proc/meminfo') && preg_match('/MemAvailable:\s+(\d+) kB/', (string) file_get_contents('/proc/meminfo'), $m)) {
             $available = (int) $m[1] * 1024;
             $parts[] = 'memory available '.Number::fileSize($available);
-            if ($available < 2.5 * 1024 ** 3 && config('mofaregh.asr.model') !== 'small' && config('mofaregh.asr.model') !== 'tiny' && config('mofaregh.asr.model') !== 'base') {
+            if ($available < 2.5 * 1024 ** 3 && ! in_array(config('mofaregh.asr.model'), ['tiny', 'base', 'small'], true)) {
                 $parts[] = 'WARNING: under 2.5 GB free, the '.config('mofaregh.asr.model').' model may be killed; consider ASR_MODEL=small';
             }
         }
