@@ -26,14 +26,17 @@ return [
     'python' => env('MOFAREGH_PYTHON'),
 
     'asr' => [
-        // faster-whisper model: small (fast, weaker), medium (default), large-v3 (best, heavy on a CPU).
-        'model' => env('ASR_MODEL', 'medium'),
+        // faster-whisper model. small (default) needs about 1 GB of memory and suits the current VPS (1 core,
+        // about 2 GB free); medium is more accurate but needs about 2 GB and is several times slower; large-v3 needs
+        // a bigger server. mofaregh:asr-check prints the memory and cores available.
+        'model' => env('ASR_MODEL', 'small'),
         // CPU threads Whisper may use. The VPS is shared with other sites: keep this below the core count.
         'threads' => (int) env('ASR_THREADS', 2),
         // Seconds one file may take (default 6 hours: a long lecture on two threads).
         'timeout' => (int) env('ASR_TIMEOUT', 6 * 3600),
         // Where Whisper models are downloaded (shared storage, so releases reuse them; medium is about 1.5 GB).
-        'model_dir' => env('ASR_MODEL_DIR', storage_path('app/asr-models')),
+        // storage/app/private is the local disk root, which the site user can always write (uploads land there).
+        'model_dir' => env('ASR_MODEL_DIR', storage_path('app/private/asr-models')),
         // A running draft with no progress for this long is treated as dead and may be restarted. The first run
         // downloads the model before any progress, hence the margin.
         'stall_minutes' => (int) env('ASR_STALL_MINUTES', 30),

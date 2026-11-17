@@ -39,12 +39,15 @@ class WhisperTranscriber implements Transcriber
             throw new AsrFailed('محرّك التفريغ الآلي غير مثبّت على الخادم.');
         }
 
-        $env = [];
-        if ($this->modelDir) {
-            is_dir($this->modelDir) || @mkdir($this->modelDir, 0775, true);
-            $env['HF_HOME'] = $this->modelDir;
+        $env = [
+            'HF_HUB_DISABLE_PROGRESS_BARS' => '1',  // progress bars on stderr would hide the real error
+            'HF_HUB_VERBOSITY' => 'error',
+            'PYTHONWARNINGS' => 'ignore',
+        ];
+        $dir = $this->usableModelDir();
+        if ($dir !== null) {
+            $env['HF_HOME'] = $dir;
         }
-        $env['HF_HUB_DISABLE_PROGRESS_BARS'] = '1';  // progress bars on stderr would hide the real error
 
         $out = tempnam(sys_get_temp_dir(), 'mofaregh-asr-');
         $process = new Process([
@@ -97,6 +100,23 @@ class WhisperTranscriber implements Transcriber
         }
     }
 
+    /** The model folder if it exists or can be created and is writable; null = Hugging Face's default cache. */
+    public function usableModelDir(): ?string
+    {
+        if (! $this->modelDir) {
+            return null;
+        }
+        if (! is_dir($this->modelDir)) {
+            @mkdir($this->modelDir, 0775, true);
+        }
+        if (is_dir($this->modelDir) && is_writable($this->modelDir)) {
+            return $this->modelDir;
+        }
+        Log::warning('asr: model folder is not writable, using the default cache', ['dir' => $this->modelDir]);
+
+        return null;
+    }
+
     /** One Arabic sentence for the editor, with the engine's own last error line for whoever reads the logs. */
     private function failureMessage(Process $process): string
     {
@@ -106,12 +126,17 @@ class WhisperTranscriber implements Transcriber
             'stderr' => Str::limit($process->getErrorOutput(), 4000),
         ]);
 
-        // Killed by the system (SIGKILL = 9): on a shared server that is almost always the memory limit.
-        if ($process->hasBeenSignaled() && $process->getTermSignal() === 9) {
+        // Killed by the system (SIGKILL = 9): on a shared server that is almost always the memory limit. With no
+        // traceback at all the process was most likely killed the same way.
+        if (($process->hasBeenSignaled() && $process->getTermSignal() === 9) || $process->getExitCode() === 137) {
             return 'أوقف الخادم محرّك التفريغ لنفاد الذاكرة غالبًا. جرّب نموذجًا أصغر (ASR_MODEL=small) أو أعد المحاولة.';
         }
 
-        $lines = array_values(array_filter(array_map('trim', explode("\n", $process->getErrorOutput()))));
+        // The last line that is not a warning: Hugging Face prints harmless warnings after the real error.
+        $lines = array_values(array_filter(
+            array_map('trim', explode("\n", $process->getErrorOutput())),
+            fn (string $line): bool => $line !== '' && ! preg_match('/^(warning|warnings\.warn|\S*Warning:)/i', $line),
+        ));
         $last = $lines === [] ? 'توقف دون رسالة خطأ.' : end($lines);
         if (str_contains($last, 'MemoryError') || str_contains($last, 'std::bad_alloc')) {
             return 'نفدت ذاكرة الخادم أثناء التفريغ. جرّب نموذجًا أصغر (ASR_MODEL=small) أو أعد المحاولة.';

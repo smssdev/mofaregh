@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from .paragraphs import group_paragraphs
@@ -36,7 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     print("STAGE loading", flush=True)
     from faster_whisper import WhisperModel  # imported late: heavy, and absent in unit tests
 
-    model = WhisperModel(args.model, device="cpu", compute_type=args.compute_type, cpu_threads=args.threads)
+    threads = max(1, min(args.threads, os.cpu_count() or 1))  # more threads than cores only adds contention
+    model = WhisperModel(args.model, device="cpu", compute_type=args.compute_type, cpu_threads=threads)
     segments, info = model.transcribe(
         args.audio,
         language=args.language,

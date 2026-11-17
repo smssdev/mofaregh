@@ -61,6 +61,7 @@ migrates, caches and switches the `current` symlink in one step. It can also be 
   `python3` (3.10+). The VPS has no `python3-venv` (root-only to install), so the virtualenv is created without
   pip and pip is bootstrapped from `bootstrap.pypa.io/get-pip.py`. If any step fails the deploy still succeeds,
   its log shows a `WARN python:` line, and the editor says the feature is off.
-- ASR is Whisper on the CPU (`ASR_MODEL=medium`, `ASR_THREADS=2` in `shared/.env`). The model (about 1.5 GB) is
-  downloaded by the first transcription and needs about 2 GB of memory while it runs; an hour of audio can take
-  about as long as the audio itself. One file is transcribed at a time by the scheduler's `asr` queue worker.
+- ASR is Whisper on the CPU (`ASR_MODEL=small` by default, `ASR_THREADS` capped at the core count). The VPS has 1
+  core and about 2 GB free: `small` (about 500 MB download, 1 GB of memory) fits; `medium` is more accurate but gets
+  killed or runs for hours. Models are kept in `shared/storage/app/private/asr-models`. Every deploy log shows
+  `mofaregh:asr-check --run` (Python, memory, scheduler, queue, failed drafts, and a 3-second test). One file is transcribed at a time by the scheduler's `asr` queue worker.
