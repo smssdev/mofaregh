@@ -4,6 +4,7 @@ use App\Http\Controllers\AudioFileController;
 use App\Http\Controllers\AudioUploadController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProofingRuleController;
 use App\Http\Controllers\TranscriptController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -16,6 +17,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     Route::put('/auth/password', [AuthController::class, 'updatePassword']);
 
     Route::apiResource('users', UserController::class)->except('show');
+
+    Route::post('/proofing-rules/import', [ProofingRuleController::class, 'import']);
+    Route::apiResource('proofing-rules', ProofingRuleController::class)->except('show');
 
     Route::apiResource('projects', ProjectController::class);
     Route::put('/projects/{project}/members', [ProjectController::class, 'syncMembers']);
