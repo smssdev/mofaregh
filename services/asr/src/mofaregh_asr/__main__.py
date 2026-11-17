@@ -2,7 +2,8 @@
 
     python -m mofaregh_asr AUDIO --out result.json [--model medium] [--threads 2] [--language ar]
 
-Prints ``PROGRESS <0..1>`` lines on stdout while it works and writes
+Prints ``STAGE <loading|transcribing>`` and ``PROGRESS <0..1>`` lines on stdout while it works (the
+first run downloads the model, which can take minutes before any progress), and writes
 ``{"language", "duration", "model", "paragraphs": [{"start_ms", "end_ms", "text", "unclear": [...]}]}``
 to --out; ``unclear`` lists the words Whisper was unsure of with their exact times (see paragraphs.py).
 The model is downloaded on first use (Hugging Face cache of the running user).
@@ -32,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="words with a lower probability are reported as unclear, with their times")
     args = parser.parse_args(argv)
 
+    print("STAGE loading", flush=True)
     from faster_whisper import WhisperModel  # imported late: heavy, and absent in unit tests
 
     model = WhisperModel(args.model, device="cpu", compute_type=args.compute_type, cpu_threads=args.threads)
@@ -45,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         word_timestamps=True,  # exact times (and confidence) of every word, for the "unclear" marks
         condition_on_previous_text=False,  # stops one bad stretch from derailing the rest of a long lecture
     )
+    print("STAGE transcribing", flush=True)
     duration = float(info.duration or 0)
     collected = []
     last = -1.0

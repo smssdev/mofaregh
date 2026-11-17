@@ -69,9 +69,10 @@ class TranscriptTest extends TestCase
                 return 'fake';
             }
 
-            public function transcribe(string $audioPath, Closure $progress): array
+            public function transcribe(string $audioPath, Closure $progress, ?string $model = null): array
             {
-                $progress(50);
+                $progress(0, 'loading');
+                $progress(50, 'transcribing');
 
                 return $this->draft ?? throw new AsrFailed('تعذّر التفريغ الآلي: خطأ تجريبي');
             }
@@ -248,6 +249,61 @@ class TranscriptTest extends TestCase
         $this->fakeEngines(available: false);
         // The fake still "exports"; the real exporter throws ExportFailed -> 503 (covered by its own unit below).
         $this->getJson($this->url())->assertJson(['export_available' => false, 'asr' => ['available' => false]]);
+    }
+
+    public function test_a_stalled_draft_can_be_started_again_and_a_live_one_cannot(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->transcriber, 'web');
+        $transcript = $this->audio->transcript()->create([
+            'asr_status' => AsrStatus::Running, 'asr_progress' => 40, 'asr_heartbeat_at' => now()->subMinutes(5),
+        ]);
+
+        $this->getJson($this->url())->assertJsonPath('asr.stalled', false);
+        $this->postJson($this->url('/transcribe'))->assertStatus(409);
+
+        $transcript->update(['asr_heartbeat_at' => now()->subMinutes(45)]);
+        $this->getJson($this->url())->assertJsonPath('asr.stalled', true);
+        $this->postJson($this->url('/transcribe'))->assertOk()->assertJsonPath('asr.status', 'queued');
+        Queue::assertPushed(TranscribeAudio::class, 1);
+    }
+
+    public function test_a_queued_draft_no_worker_picks_up_is_reported_stalled(): void
+    {
+        $this->actingAs($this->transcriber, 'web');
+        $this->audio->transcript()->create(['asr_status' => AsrStatus::Queued, 'asr_heartbeat_at' => now()->subMinutes(10)]);
+
+        $this->getJson($this->url())->assertJsonPath('asr.stalled', true);
+    }
+
+    public function test_the_job_records_its_stage_and_clears_it_when_done(): void
+    {
+        $this->audio->transcript()->create(['asr_status' => AsrStatus::Queued]);
+        (new TranscribeAudio($this->audio))->handle(app(Transcriber::class));
+
+        $transcript = $this->audio->fresh()->transcript;
+        $this->assertSame(AsrStatus::Done, $transcript->asr_status);
+        $this->assertNull($transcript->asr_stage);
+        $this->assertNotNull($transcript->asr_heartbeat_at);
+    }
+
+    public function test_a_leftover_job_does_not_transcribe_a_file_again(): void
+    {
+        $this->audio->transcript()->create(['asr_status' => AsrStatus::Done, 'asr_result' => [['start_ms' => 0, 'end_ms' => 1, 'text' => 'قديم']]]);
+
+        (new TranscribeAudio($this->audio))->handle(app(Transcriber::class));
+
+        $this->assertSame('قديم', $this->audio->fresh()->transcript->asr_result[0]['text']);
+    }
+
+    public function test_the_health_check_reports_without_failing(): void
+    {
+        $this->audio->transcript()->create(['asr_status' => AsrStatus::Failed, 'asr_error' => 'نفدت الذاكرة']);
+
+        $this->artisan('mofaregh:asr-check')
+            ->expectsOutputToContain('asr: drafts failed=1')
+            ->expectsOutputToContain('نفدت الذاكرة')
+            ->assertSuccessful();
     }
 
     public function test_deleting_the_audio_removes_its_transcript(): void

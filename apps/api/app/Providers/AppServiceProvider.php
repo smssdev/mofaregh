@@ -30,6 +30,7 @@ class AppServiceProvider extends ServiceProvider
             (string) config('mofaregh.asr.model'),
             (int) config('mofaregh.asr.threads'),
             (int) config('mofaregh.asr.timeout'),
+            config('mofaregh.asr.model_dir'),
         ));
 
         $this->app->bind(DocxExporter::class, fn () => new TextEngineDocxExporter(config('mofaregh.python')));

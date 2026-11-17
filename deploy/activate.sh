@@ -55,6 +55,10 @@ setup_python || echo "WARN python: setup failed, continuing."
 php artisan migrate --force --no-interaction
 php artisan optimize
 
+# Health of the automatic draft, in the deploy log: Python, packages, memory, scheduler, queue, stalled or failed
+# drafts, and a real three-second transcription with the "tiny" model. Never stops the deploy.
+timeout 900 php artisan mofaregh:asr-check --run || echo "WARN asr-check did not finish."
+
 ln -sfn "$RELEASE" "$APP_DIR/current.tmp"
 mv -Tf "$APP_DIR/current.tmp" "$APP_DIR/current"
 

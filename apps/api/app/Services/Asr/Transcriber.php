@@ -13,10 +13,11 @@ interface Transcriber
     public function model(): string;
 
     /**
-     * @param  Closure(int): void  $progress  called with 0..100 while the engine works
+     * @param  Closure(int, ?string): void  $progress  called with 0..100 and the stage ("loading" while the model is
+     *                                                 downloaded or opened, then "transcribing") while the engine works
      * @return list<array{start_ms: int, end_ms: int, text: string, unclear?: list<array{start_ms: int, end_ms: int, text: string, offset: int}>}>
      *
      * @throws AsrFailed
      */
-    public function transcribe(string $audioPath, Closure $progress): array;
+    public function transcribe(string $audioPath, Closure $progress, ?string $model = null): array;
 }
