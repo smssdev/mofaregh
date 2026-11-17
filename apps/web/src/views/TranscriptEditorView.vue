@@ -1,9 +1,12 @@
 <script setup lang="ts">
 /**
- * The transcription workspace: player on top, Word-style ribbon, the page, and a status bar.
+ * The transcription workspace, laid out so the page stays the largest thing on screen:
+ *   - a side panel (player, unclear spots, automatic draft) that can be resized, collapsed or moved to the other side;
+ *   - a slim toolbar above the page with the controls used every few seconds, and one row of Word tools under it;
+ *   - the page itself, with the audio time above each paragraph (click it to play from there).
  * Text is saved automatically with a version check; the automatic draft and the Word export go through the API.
  */
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, onBeforeRouteLeave } from 'vue-router'
 import { AxiosError } from 'axios'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
@@ -29,10 +32,12 @@ import {
   TimedParagraph,
   Unclear,
   autoCorrectDocument,
+  clearParagraphTime,
   findMatches,
   followPlayback,
   replaceMatches,
   selectNextMatch,
+  stampParagraph,
   startAt,
   unclearAt,
   unclearRanges,
@@ -64,7 +69,7 @@ const editor = useEditor({
     Subscript,
     Superscript,
     TableKit.configure({ table: { resizable: false } }),
-    Placeholder.configure({ placeholder: 'ابدأ الكتابة هنا، أو اطلب مسودة آلية من تبويب «التفريغ والتصحيح»…' }),
+    Placeholder.configure({ placeholder: 'شغّل الصوت (Esc) وابدأ الكتابة، أو اطلب مسودة آلية من اللوحة الجانبية…' }),
     CharacterCount,
     PlaybackHighlight,
     FormulaRules,
@@ -72,6 +77,17 @@ const editor = useEditor({
   ],
   editorProps: {
     attributes: { dir: 'rtl', lang: 'ar', spellcheck: 'true', 'aria-label': 'نص التفريغ' },
+    handleDOMEvents: {
+      // The time shown above a paragraph (its ::before) plays the audio from there.
+      mousedown(_view, event) {
+        const target = event.target as HTMLElement | null
+        if (target?.tagName !== 'P' || !target.dataset.start) return false
+        if (event.clientY - target.getBoundingClientRect().top > TIME_LABEL_HEIGHT) return false
+        event.preventDefault()
+        relisten(Number(target.dataset.start), 0)
+        return true
+      },
+    },
     handleClick(view, pos, event) {
       if (!event.altKey) return false
       const unclear = unclearAt(view.state.doc, pos)
@@ -85,21 +101,65 @@ const editor = useEditor({
       return true
     },
   },
-  onUpdate({ editor: instance }) {
-    unclearCount.value = unclearRanges(instance.state.doc).length
+  onUpdate() {
+    refreshUnclear()
     if (!ready) return
     markDirty()
     player.value?.typing()
+    autoStamp()
   },
 })
 
+/** Pixels at the top of a timed paragraph taken by its time label (see .doc-page CSS). */
+const TIME_LABEL_HEIGHT = 26
+
+// --- paragraph times: typed paragraphs get the audio time they were heard at ---------------------------------
+const autoTime = ref(localStorage.getItem('mofaregh.autoTime') !== 'off')
+watch(autoTime, (on) => localStorage.setItem('mofaregh.autoTime', on ? 'on' : 'off'))
+/** You type what you heard a moment ago: the paragraph is stamped this many seconds before "now". */
+const TYPING_LAG = 2
+
+function autoStamp(): void {
+  const instance = editor.value
+  const now = player.value?.currentTime() ?? 0
+  if (!autoTime.value || !instance || now <= 0) return
+  const { $from } = instance.state.selection
+  if ($from.parent.type.name !== 'paragraph' || $from.parent.attrs.start !== null || $from.parent.textContent.trim() === '') return
+  // After this update has been applied: a transaction may not be dispatched from inside another one.
+  queueMicrotask(() => stampParagraph(instance, Math.max(0, now - TYPING_LAG) * 1000))
+}
+
+function stampNow(): void {
+  if (!editor.value) return
+  clearParagraphTime(editor.value)
+  stampParagraph(editor.value, (player.value?.currentTime() ?? 0) * 1000)
+}
+
 // --- unclear words: marked by hand (F3) or by the automatic draft, always with their audio time ----------------
-const unclearCount = ref(0)
+interface UnclearItem {
+  from: number
+  to: number
+  start: number | null
+  auto: boolean
+  text: string
+}
+const unclearList = ref<UnclearItem[]>([])
+const unclearCount = computed(() => unclearList.value.length)
 const RELISTEN_LEAD = 2 // seconds played before the unclear spot, so the word is heard in context
 
-function relisten(ms: number): void {
-  player.value?.seekTo(Math.max(0, ms / 1000 - RELISTEN_LEAD))
+function refreshUnclear(): void {
+  const doc = editor.value?.state.doc
+  unclearList.value = doc ? unclearRanges(doc).map((r) => ({ ...r, text: doc.textBetween(r.from, r.to, ' ') })) : []
+}
+
+function relisten(ms: number, lead = RELISTEN_LEAD): void {
+  player.value?.seekTo(Math.max(0, ms / 1000 - lead))
   void player.value?.play(false)
+}
+
+function goToUnclear(item: UnclearItem): void {
+  editor.value?.chain().focus().setTextSelection({ from: item.from, to: item.to }).scrollIntoView().run()
+  if (item.start !== null) relisten(item.start)
 }
 
 /** Stamps the current audio time: marks the selection (if any) and inserts "[غير واضح hh:mm:ss]". */
@@ -217,7 +277,7 @@ async function load(): Promise<void> {
     title.value = transcriptResponse.data.title ?? audioResponse.data.original_name.replace(/\.[^.]+$/, '')
     document.title = `${title.value} · مُفرِّغ`
     if (transcriptResponse.data.content) editor.value?.commands.setContent(transcriptResponse.data.content, { emitUpdate: false })
-    if (editor.value) unclearCount.value = unclearRanges(editor.value.state.doc).length
+    refreshUnclear()
     ready = true
     if (transcriptResponse.data.asr.status === 'queued' || transcriptResponse.data.asr.status === 'running') startPolling()
   } catch (error) {
@@ -230,6 +290,7 @@ let pollTimer: number | undefined
 const draftDialog = ref(false)
 const asr = computed(() => transcript.value?.asr)
 const hasDraft = computed(() => (asr.value?.paragraphs?.length ?? 0) > 0)
+const asrBusy = computed(() => asr.value?.status === 'queued' || asr.value?.status === 'running')
 
 function startPolling(): void {
   window.clearInterval(pollTimer)
@@ -473,6 +534,48 @@ function setZoom(value: number): void {
 const print = () => window.print()
 const reload = () => window.location.reload()
 
+/** Page width (21 cm at 100%) scaled to the space the page column has. */
+const pageColumn = ref<HTMLElement | null>(null)
+function fitWidth(): void {
+  const width = pageColumn.value?.clientWidth ?? 0
+  if (width > 0) setZoom(Math.max(50, Math.min(200, Math.floor(((width - 48) / (21 * 37.8)) * 100))))
+}
+
+// --- layout: side panel and Word tools ---------------------------------------------------------------------
+const LAYOUT_KEY = 'mofaregh.layout'
+const layout = reactive({ sideOpen: true, sideWidth: 340, sideAtEnd: false, toolsOpen: true })
+try {
+  Object.assign(layout, JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}'))
+} catch {
+  // corrupt layout: keep the defaults
+}
+watch(layout, () => localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)))
+
+const MIN_SIDE = 260
+const MAX_SIDE = 560
+let resizing: { x: number; width: number } | null = null
+
+function startResize(event: PointerEvent): void {
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  resizing = { x: event.clientX, width: layout.sideWidth }
+}
+
+function onResize(event: PointerEvent): void {
+  if (!resizing) return
+  // In RTL the panel sits on the right when it is "at the start": dragging left makes it wider.
+  const dx = event.clientX - resizing.x
+  const grow = layout.sideAtEnd ? dx : -dx
+  layout.sideWidth = Math.min(MAX_SIDE, Math.max(MIN_SIDE, resizing.width + grow))
+}
+
+function onResizeKey(event: KeyboardEvent): void {
+  const step = event.shiftKey ? 60 : 20
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  const towardsPage = (event.key === 'ArrowLeft') !== layout.sideAtEnd
+  layout.sideWidth = Math.min(MAX_SIDE, Math.max(MIN_SIDE, layout.sideWidth + (towardsPage ? step : -step)))
+  event.preventDefault()
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKeydown, true)
   window.addEventListener('beforeunload', warnBeforeLeaving)
@@ -489,112 +592,256 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-dvh flex-col bg-slate-200">
-    <header class="flex flex-wrap items-center gap-3 bg-brand-900 px-3 py-2 text-white print:hidden">
+  <div class="flex h-dvh flex-col bg-slate-100">
+    <!-- Header: back, title, save state, export -->
+    <header class="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5 print:hidden">
       <RouterLink
         :to="file ? { name: 'project', params: { id: file.project_id } } : { name: 'projects' }"
-        class="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-brand-100 hover:bg-brand-800 focus-visible:outline-2 focus-visible:outline-white"
+        class="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-brand-600"
       >
         <svg viewBox="0 0 24 24" class="size-4 rtl:-scale-x-100" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6" /></svg>
         المشروع
       </RouterLink>
       <input
         v-model="title"
-        class="min-w-40 flex-1 rounded bg-brand-800 px-3 py-1.5 text-base font-semibold text-white placeholder:text-brand-100/60 focus-visible:outline-2 focus-visible:outline-white"
+        class="min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-semibold hover:border-slate-200 focus-visible:border-brand-600 focus-visible:outline-none"
         placeholder="عنوان التفريغ (يظهر أعلى ملف Word)"
         aria-label="عنوان التفريغ"
         maxlength="190"
         @input="markDirty"
       />
-      <p class="text-sm" :class="saveState === 'error' || saveState === 'conflict' ? 'rounded bg-red-600 px-2 py-1 text-white' : 'text-brand-100'" role="status">
-        {{ saveLabel }}
-        <button v-if="saveState === 'conflict'" class="ms-2 underline" @click="reload">إعادة التحميل</button>
-      </p>
+      <span
+        class="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm"
+        :class="saveState === 'error' || saveState === 'conflict' ? 'bg-red-600 text-white' : 'text-slate-500'"
+        role="status"
+      >
+        <svg v-if="saveState === 'saved'" viewBox="0 0 24 24" class="size-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z" /><path d="m9 13 2 2 4-4" /></svg>
+        <span class="max-sm:hidden">{{ saveLabel }}</span>
+        <button v-if="saveState === 'conflict'" class="underline" @click="reload">إعادة التحميل</button>
+      </span>
+      <button
+        class="btn-primary shrink-0 px-3 py-1.5"
+        :disabled="exporting"
+        :title="transcript?.export_available === false ? 'محرّك التصدير غير مثبّت على الخادم' : 'تنزيل ملف Word بتنسيق العميل'"
+        @click="exportWord"
+      >
+        <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14" /></svg>
+        {{ exporting ? 'يصدّر…' : 'تصدير Word' }}
+      </button>
     </header>
 
     <p v-if="loadError" class="m-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ loadError }}</p>
 
-    <template v-else>
-      <MediaPlayer
-        v-if="file?.stream_url"
-        ref="player"
-        class="print:hidden"
-        :src="file.stream_url"
-        :file-id="file.id"
-        :duration-seconds="file.duration_seconds"
-        @time="(ms) => editor && followPlayback(editor, ms)"
-      />
-      <p v-else-if="file" class="bg-amber-50 px-4 py-2 text-sm text-amber-800 print:hidden">الملف الصوتي غير جاهز للتشغيل بعد؛ يمكنك الكتابة، وسيظهر المشغّل بعد اكتمال معالجته.</p>
+    <div v-else class="flex min-h-0 flex-1" :class="{ 'flex-row-reverse': layout.sideAtEnd }">
+      <!-- Side panel: player, unclear spots, automatic draft -->
+      <aside
+        v-show="layout.sideOpen"
+        class="side flex shrink-0 flex-col gap-3 overflow-y-auto p-3 print:hidden"
+        :style="{ width: `${layout.sideWidth}px` }"
+        aria-label="لوحة الصوت"
+      >
+        <MediaPlayer
+          v-if="file?.stream_url"
+          ref="player"
+          :src="file.stream_url"
+          :file-id="file.id"
+          :duration-seconds="file.duration_seconds"
+          @time="(ms) => editor && followPlayback(editor, ms)"
+        />
+        <p v-else-if="file" class="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">الملف الصوتي غير جاهز للتشغيل بعد؛ يمكنك الكتابة، وسيظهر المشغّل بعد اكتمال معالجته.</p>
 
-      <EditorRibbon
-        v-if="editor && transcript"
-        :editor="editor"
-        :zoom="zoom"
-        :typing-correction="typingCorrection"
-        :saving="saveState === 'saving'"
-        :dirty="saveState !== 'saved'"
-        :exporting="exporting"
-        :export-available="transcript.export_available"
-        :asr-available="transcript.asr.available"
-        :asr-status="transcript.asr.status"
-        :asr-progress="transcript.asr.progress"
-        :has-draft="hasDraft"
-        :unclear-count="unclearCount"
-        @mark-unclear="markUnclear"
-        @next-unclear="nextUnclear"
-        @clear-unclear="clearUnclear"
-        @save="save"
-        @export="exportWord"
-        @print="print"
-        @find="openFind"
-        @auto-correct="autoCorrect"
-        @transcribe="transcribe"
-        @insert-draft="offerDraft"
-        @insert-time="insertTime"
-        @shortcuts="shortcutsOpen = true"
-        @update:zoom="setZoom"
-        @update:typing-correction="setTypingCorrection"
-      />
+        <!-- Unclear spots -->
+        <section class="card p-3" aria-labelledby="unclear-title">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h2 id="unclear-title" class="text-sm font-semibold">غير واضح <span class="tabular text-slate-500">({{ unclearCount }})</span></h2>
+            <button class="btn-secondary px-2 py-1 text-xs" title="F3: يسجّل وقت الصوت الحالي؛ وإن حدّدت كلمة وسمها" @click="markUnclear">+ وسم الآن</button>
+          </div>
+          <p v-if="unclearCount === 0" class="text-xs text-slate-500">اضغط F3 عند سماع كلمة غير واضحة ليُسجَّل وقتها بالضبط، وتظهر هنا لإعادة سماعها.</p>
+          <ul v-else class="max-h-52 space-y-1 overflow-y-auto">
+            <li v-for="item in unclearList" :key="`${item.from}-${item.start}`">
+              <button class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-start text-sm hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-brand-600" :title="item.auto ? 'شكّ فيها التفريغ الآلي' : 'وسمٌ يدوي'" @click="goToUnclear(item)">
+                <span class="tabular shrink-0 rounded bg-amber-100 px-1.5 text-xs text-amber-900" dir="ltr">{{ item.start === null ? '—' : formatClock(item.start / 1000) }}</span>
+                <span class="truncate">{{ item.text }}</span>
+                <span v-if="item.auto" class="ms-auto shrink-0 text-[10px] text-slate-400">آلي</span>
+              </button>
+            </li>
+          </ul>
+        </section>
 
-      <!-- Find and replace -->
-      <form v-if="find.open" class="flex flex-wrap items-center gap-2 border-b border-slate-300 bg-amber-50 px-3 py-2 text-sm print:hidden" @submit.prevent="findNext()">
-        <input ref="findInput" v-model="find.query" class="input w-56" placeholder="بحث عن…" aria-label="بحث عن" @input="find.count = matches().length" />
-        <input v-model="find.replacement" class="input w-56" placeholder="استبدال بـ…" aria-label="استبدال بـ" />
-        <button type="submit" class="btn-secondary px-3 py-1.5">التالي</button>
-        <button type="button" class="btn-secondary px-3 py-1.5" @click="findNext(true)">السابق</button>
-        <button type="button" class="btn-secondary px-3 py-1.5" :disabled="!find.query" @click="replaceOne">استبدال</button>
-        <button type="button" class="btn-secondary px-3 py-1.5" :disabled="!find.query" @click="replaceAll">استبدال الكل</button>
-        <label class="flex items-center gap-1.5">
-          <input v-model="find.ignoreTashkeel" type="checkbox" class="size-4 accent-brand-700" @change="find.count = matches().length" />
-          تجاهل التشكيل
+        <!-- Automatic draft -->
+        <section v-if="transcript" class="card p-3" aria-labelledby="asr-title">
+          <h2 id="asr-title" class="mb-2 text-sm font-semibold">التفريغ الآلي</h2>
+          <div v-if="asrBusy" class="space-y-1" role="status">
+            <div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full bg-brand-600 transition-all" :style="{ width: `${transcript.asr.progress}%` }" /></div>
+            <p class="tabular text-xs text-slate-600">{{ transcript.asr.status === 'queued' ? 'في الانتظار…' : `يفرّغ الآن ${transcript.asr.progress}%` }}</p>
+          </div>
+          <p v-else-if="!transcript.asr.available" class="text-xs text-amber-700">محرّك التفريغ غير مثبّت على الخادم بعد.</p>
+          <p v-else-if="transcript.asr.status === 'failed'" class="text-xs text-red-600">{{ transcript.asr.error }}</p>
+          <p v-else-if="hasDraft" class="text-xs text-slate-600">المسودة جاهزة ({{ transcript.asr.paragraphs?.length }} فقرة).</p>
+          <p v-else class="text-xs text-slate-500">مسودة أولى من الصوت تصحّحها بدل الكتابة من الصفر.</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button class="btn-primary px-3 py-1.5 text-xs" :disabled="asrBusy || !transcript.asr.available" @click="transcribe">
+              {{ transcript.asr.status === 'done' ? 'إعادة التفريغ' : 'بدء التفريغ الآلي' }}
+            </button>
+            <button v-if="hasDraft" class="btn-secondary px-3 py-1.5 text-xs" @click="offerDraft">إدراج المسودة</button>
+          </div>
+        </section>
+
+        <label class="flex items-center gap-2 px-1 text-xs text-slate-600">
+          <input v-model="autoTime" type="checkbox" class="size-4 accent-brand-700" />
+          تسجيل وقت الصوت لكل فقرة جديدة تلقائيًا
         </label>
-        <span class="tabular text-slate-600" role="status">{{ find.query ? `${find.count} نتيجة` : '' }}</span>
-        <button type="button" class="btn-ghost ms-auto px-2 py-1" aria-label="إغلاق البحث" @click="find.open = false">✕</button>
-      </form>
+      </aside>
 
-      <p v-if="notice" class="flex items-center justify-between gap-3 border-b border-brand-100 bg-brand-50 px-4 py-2 text-sm text-brand-900 print:hidden" role="status">
-        <span>{{ notice }}</span>
-        <button class="rounded px-2 text-brand-700 hover:bg-brand-100" aria-label="إخفاء الرسالة" @click="notice = ''">✕</button>
-      </p>
+      <!-- Splitter: drag (or arrow keys) to resize the side panel -->
+      <div
+        v-show="layout.sideOpen"
+        class="splitter print:hidden"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        aria-label="تغيير عرض لوحة الصوت"
+        :aria-valuenow="layout.sideWidth"
+        :aria-valuemin="MIN_SIDE"
+        :aria-valuemax="MAX_SIDE"
+        @pointerdown="startResize"
+        @pointermove="onResize"
+        @pointerup="resizing = null"
+        @pointercancel="resizing = null"
+        @keydown="onResizeKey"
+      />
 
-      <main class="doc-scroll min-h-0 flex-1 overflow-auto">
-        <div class="doc-page" :style="{ zoom: zoom / 100 }">
-          <h1 v-if="title.trim()" class="doc-title" aria-hidden="true">{{ title }}</h1>
-          <EditorContent v-if="editor" :editor="editor" />
+      <!-- Document column -->
+      <section ref="pageColumn" class="flex min-w-0 flex-1 flex-col">
+        <!-- Toolbar: what is used every few seconds -->
+        <div class="toolbar print:hidden">
+          <button class="tbtn" :title="layout.sideOpen ? 'إخفاء لوحة الصوت' : 'إظهار لوحة الصوت'" :aria-label="layout.sideOpen ? 'إخفاء لوحة الصوت' : 'إظهار لوحة الصوت'" :aria-pressed="layout.sideOpen" @click="layout.sideOpen = !layout.sideOpen">
+            <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></svg>
+          </button>
+
+          <template v-if="file?.stream_url">
+            <span class="tsep" />
+            <button class="tbtn" :title="`رجوع (${shortcuts.back})`" aria-label="رجوع" @click="run('back')">
+              <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+            </button>
+            <button class="tbtn text-brand-700" :title="`${player?.playing ? 'إيقاف' : 'تشغيل'} (${shortcuts.playPause})`" :aria-label="player?.playing ? 'إيقاف' : 'تشغيل'" @click="run('playPause')">
+              <svg v-if="player?.playing" viewBox="0 0 24 24" class="size-6" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M10 9v6m4-6v6" stroke-linecap="round" /></svg>
+              <svg v-else viewBox="0 0 24 24" class="size-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="m10 8 6 4-6 4z" fill="currentColor" /></svg>
+            </button>
+            <button class="tbtn" :title="`تقديم (${shortcuts.forward})`" aria-label="تقديم" @click="run('forward')">
+              <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>
+            </button>
+            <button class="tbtn tabular min-w-12 text-sm font-semibold" :title="`السرعة: ${shortcuts.slower} أبطأ، ${shortcuts.faster} أسرع. انقر للتبديل بين 1× و0.75×`" aria-label="السرعة" dir="ltr" @click="player?.setRate(player.rate === 1 ? 0.75 : 1)">
+              {{ (player?.rate ?? 1).toFixed(2).replace(/\.?0+$/, '') }}×
+            </button>
+            <span class="tabular px-1 text-sm text-slate-600 max-md:hidden" dir="ltr">{{ formatClock(player?.current ?? 0) }}</span>
+          </template>
+
+          <span class="tsep" />
+          <button class="tbtn" :title="`وسم «غير واضح» بوقت الصوت (${shortcuts.markUnclear})`" aria-label="وسم غير واضح" @click="markUnclear">
+            <svg viewBox="0 0 24 24" class="size-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" /></svg>
+          </button>
+          <button class="tbtn" title="تسجيل وقت الصوت الحالي لهذه الفقرة" aria-label="وقت الفقرة" @click="stampNow">
+            <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2M9 2h6" /></svg>
+          </button>
+          <button class="tbtn" :title="`تصحيح آلي (${shortcuts.autoCorrect})`" aria-label="تصحيح آلي" @click="autoCorrect">
+            <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /></svg>
+          </button>
+          <button class="tbtn" :title="`بحث واستبدال (${shortcuts.find})`" aria-label="بحث واستبدال" @click="openFind">
+            <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+          </button>
+
+          <span class="tsep" />
+          <button class="tbtn" title="تراجع (Ctrl+Z)" aria-label="تراجع" :disabled="!editor?.can().undo()" @click="editor?.chain().focus().undo().run()">
+            <svg viewBox="0 0 24 24" class="size-5 rtl:-scale-x-100" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+          </button>
+          <button class="tbtn" title="إعادة (Ctrl+Y)" aria-label="إعادة" :disabled="!editor?.can().redo()" @click="editor?.chain().focus().redo().run()">
+            <svg viewBox="0 0 24 24" class="size-5 rtl:-scale-x-100" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H10a6 6 0 0 0 0 12h3" /></svg>
+          </button>
+
+          <span class="ms-auto flex items-center gap-1">
+            <button class="tbtn px-2 text-sm" :aria-pressed="layout.toolsOpen" :class="{ 'tbtn-on': layout.toolsOpen }" title="إظهار أو إخفاء أدوات التنسيق (مثل وورد)" @click="layout.toolsOpen = !layout.toolsOpen">
+              <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16" /></svg>
+              <span class="max-lg:hidden">التنسيق</span>
+            </button>
+            <button class="tbtn" title="تبديل جهة لوحة الصوت" aria-label="تبديل جهة لوحة الصوت" @click="layout.sideAtEnd = !layout.sideAtEnd">
+              <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16" /></svg>
+            </button>
+            <button class="tbtn" title="اختصارات لوحة المفاتيح" aria-label="اختصارات لوحة المفاتيح" @click="shortcutsOpen = true">
+              <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></svg>
+            </button>
+          </span>
         </div>
-      </main>
 
-      <footer class="tabular flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-300 bg-slate-100 px-4 py-1 text-xs text-slate-600 print:hidden">
-        <span>الكلمات: {{ words }}</span>
-        <span>الأحرف: {{ characters }}</span>
-        <button v-if="unclearCount > 0" class="rounded bg-amber-100 px-2 text-amber-900 hover:bg-amber-200" title="ينتقل إلى الموضع التالي ويعيد سماعه" @click="nextUnclear">
-          غير واضح: {{ unclearCount }}
-        </button>
-        <span v-if="transcript?.updated_by">آخر حفظ: {{ transcript.updated_by.name }}</span>
-        <span v-if="transcript?.asr.status === 'done' && transcript.asr.model">مسودة آلية: {{ transcript.asr.model }}</span>
-        <span class="ms-auto">{{ shortcuts.playPause }} تشغيل/إيقاف · {{ shortcuts.back }}/{{ shortcuts.forward }} رجوع/تقديم · {{ shortcuts.slower }}/{{ shortcuts.faster }} السرعة · {{ shortcuts.insertTime }} إدراج الوقت</span>
-      </footer>
-    </template>
+        <!-- Word tools: one row, under the toolbar -->
+        <EditorRibbon
+          v-if="editor && transcript && layout.toolsOpen"
+          class="border-b border-slate-200 bg-white"
+          :editor="editor"
+          :zoom="zoom"
+          :typing-correction="typingCorrection"
+          :asr-available="transcript.asr.available"
+          :asr-status="transcript.asr.status"
+          :asr-progress="transcript.asr.progress"
+          :has-draft="hasDraft"
+          :unclear-count="unclearCount"
+          @mark-unclear="markUnclear"
+          @next-unclear="nextUnclear"
+          @clear-unclear="clearUnclear"
+          @print="print"
+          @fit-width="fitWidth"
+          @find="openFind"
+          @auto-correct="autoCorrect"
+          @transcribe="transcribe"
+          @insert-draft="offerDraft"
+          @insert-time="insertTime"
+          @shortcuts="shortcutsOpen = true"
+          @update:zoom="setZoom"
+          @update:typing-correction="setTypingCorrection"
+        />
+
+        <!-- Find and replace -->
+        <form v-if="find.open" class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-amber-50 px-3 py-2 text-sm print:hidden" @submit.prevent="findNext()">
+          <input ref="findInput" v-model="find.query" class="input w-48" placeholder="بحث عن…" aria-label="بحث عن" @input="find.count = matches().length" />
+          <input v-model="find.replacement" class="input w-48" placeholder="استبدال بـ…" aria-label="استبدال بـ" />
+          <button type="submit" class="btn-secondary px-3 py-1.5">التالي</button>
+          <button type="button" class="btn-secondary px-3 py-1.5" @click="findNext(true)">السابق</button>
+          <button type="button" class="btn-secondary px-3 py-1.5" :disabled="!find.query" @click="replaceOne">استبدال</button>
+          <button type="button" class="btn-secondary px-3 py-1.5" :disabled="!find.query" @click="replaceAll">استبدال الكل</button>
+          <label class="flex items-center gap-1.5">
+            <input v-model="find.ignoreTashkeel" type="checkbox" class="size-4 accent-brand-700" @change="find.count = matches().length" />
+            تجاهل التشكيل
+          </label>
+          <span class="tabular text-slate-600" role="status">{{ find.query ? `${find.count} نتيجة` : '' }}</span>
+          <button type="button" class="btn-ghost ms-auto px-2 py-1" aria-label="إغلاق البحث" @click="find.open = false">✕</button>
+        </form>
+
+        <p v-if="notice" class="flex items-center justify-between gap-3 border-b border-brand-100 bg-brand-50 px-4 py-1.5 text-sm text-brand-900 print:hidden" role="status">
+          <span>{{ notice }}</span>
+          <button class="rounded px-2 text-brand-700 hover:bg-brand-100" aria-label="إخفاء الرسالة" @click="notice = ''">✕</button>
+        </p>
+
+        <main class="doc-scroll min-h-0 flex-1 overflow-auto">
+          <div class="doc-page" :style="{ zoom: zoom / 100 }">
+            <h1 v-if="title.trim()" class="doc-title" aria-hidden="true">{{ title }}</h1>
+            <EditorContent v-if="editor" :editor="editor" />
+          </div>
+        </main>
+
+        <footer class="tabular flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 print:hidden">
+          <span>الكلمات: {{ words }}</span>
+          <span>الأحرف: {{ characters }}</span>
+          <button v-if="unclearCount > 0" class="rounded bg-amber-100 px-2 text-amber-900 hover:bg-amber-200" title="ينتقل إلى الموضع التالي ويعيد سماعه" @click="nextUnclear">غير واضح: {{ unclearCount }}</button>
+          <span v-if="transcript?.updated_by">آخر حفظ: {{ transcript.updated_by.name }}</span>
+          <span class="ms-auto max-md:hidden">{{ shortcuts.playPause }} تشغيل/إيقاف · {{ shortcuts.back }}/{{ shortcuts.forward }} رجوع/تقديم · {{ shortcuts.slower }}/{{ shortcuts.faster }} السرعة · {{ shortcuts.markUnclear }} غير واضح</span>
+          <span class="flex items-center gap-1">
+            <button class="rounded px-1 hover:bg-slate-100" aria-label="تصغير العرض" @click="setZoom(Math.max(50, zoom - 10))">−</button>
+            <button class="rounded px-1 hover:bg-slate-100" title="ملء العرض" @click="fitWidth">{{ zoom }}%</button>
+            <button class="rounded px-1 hover:bg-slate-100" aria-label="تكبير العرض" @click="setZoom(Math.min(200, zoom + 10))">+</button>
+          </span>
+        </footer>
+      </section>
+    </div>
 
     <AppModal :open="draftDialog" title="إدراج المسودة الآلية" @close="draftDialog = false">
       <p class="mb-4 text-sm text-slate-600">في الصفحة نص مكتوب. كيف تريد إدراج المسودة الآلية ({{ asr?.paragraphs?.length ?? 0 }} فقرة)؟</p>
@@ -740,6 +987,85 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
+/* --- layout ------------------------------------------------------------------------------------------- */
+.side {
+  background: var(--color-slate-50);
+  border-inline-end: 1px solid var(--color-slate-200);
+}
+.splitter {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--color-slate-200);
+}
+.splitter:hover,
+.splitter:focus-visible {
+  background: var(--color-brand-500);
+  outline: none;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-slate-200);
+  background: #fff;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.tbtn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  color: var(--color-slate-700);
+}
+.tbtn:hover {
+  background: var(--color-slate-100);
+}
+.tbtn:focus-visible {
+  outline: 2px solid var(--color-brand-600);
+}
+.tbtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.tbtn-on {
+  background: var(--color-brand-50);
+  color: var(--color-brand-800);
+}
+.tsep {
+  width: 1px;
+  height: 1.5rem;
+  margin: 0 6px;
+  flex-shrink: 0;
+  background: var(--color-slate-200);
+}
+
+/* The audio time above a timed paragraph; clicking it plays from there (see handleDOMEvents). */
+.doc-page .ProseMirror p[data-time]::before {
+  content: '▶  ' attr(data-time);
+  display: block;
+  height: 26px;
+  margin-bottom: 2pt;
+  direction: ltr;
+  text-align: right;
+  text-indent: 0;
+  font: 600 11pt/26px 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  color: var(--color-brand-700);
+  cursor: pointer;
+  user-select: none;
+}
+.doc-page .ProseMirror p[data-time]:hover::before {
+  color: var(--color-brand-900);
+  text-decoration: underline;
+}
+
 @media (max-width: 800px) {
   .doc-page {
     margin: 0;
@@ -771,6 +1097,9 @@ onBeforeUnmount(() => {
   .doc-page .ProseMirror .unclear {
     border: 0;
     background: none;
+  }
+  .doc-page .ProseMirror p[data-time]::before {
+    display: none;
   }
 }
 </style>
