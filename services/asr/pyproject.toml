@@ -7,7 +7,12 @@ name = "mofaregh-asr"
 version = "0.1.0"
 description = "Automatic first draft for Mofaregh: Whisper (faster-whisper, CPU) behind a small CLI."
 requires-python = ">=3.10"
-dependencies = ["faster-whisper>=1.1"]
+dependencies = [
+  "faster-whisper>=1.1,<2",
+  # PyAV 19 removed the metadata_errors argument that faster-whisper 1.2 passes to av.open()
+  # ("TypeError: open() got an unexpected keyword argument 'metadata_errors'" on the server).
+  "av>=11,<19",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
