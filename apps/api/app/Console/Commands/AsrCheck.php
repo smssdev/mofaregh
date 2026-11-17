@@ -29,7 +29,7 @@ class AsrCheck extends Command
         $python = (string) config('mofaregh.python');
         $this->line('asr: python '.($python === '' ? '(MOFAREGH_PYTHON not set)' : $python).($transcriber->isAvailable() ? '' : '  <- missing'));
 
-        if ($transcriber->isAvailable()) {
+        if ($python !== '' && is_file($python)) {
             $probe = new Process([$python, '-c', 'import faster_whisper, ctranslate2, av, mofaregh_asr; print(faster_whisper.__version__, ctranslate2.__version__, av.__version__)'], timeout: 120);
             $probe->run();
             $this->line('asr: packages '.($probe->isSuccessful()
