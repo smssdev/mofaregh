@@ -63,5 +63,5 @@ migrates, caches and switches the `current` symlink in one step. It can also be 
   its log shows a `WARN python:` line, and the editor says the feature is off.
 - ASR is Whisper on the CPU (`ASR_MODEL=small` by default, `ASR_THREADS` capped at the core count). The VPS has 1
   core and about 2 GB free: `small` (about 500 MB download, 1 GB of memory) fits; `medium` is more accurate but gets
-  killed or runs for hours. Models are kept in `shared/storage/app/private/asr-models`. Every deploy log shows
+  killed or runs for hours. Models are kept in `shared/asr-models` (activate.sh creates it and writes `ASR_MODEL_DIR` once; models already in `~/.cache/huggingface` are copied there). `ASR_BEAM_SIZE=2` roughly halves the time on one core if long lectures hit `ASR_TIMEOUT`. Every deploy log shows
   `mofaregh:asr-check --run` (Python, memory, scheduler, queue, failed drafts, and a 3-second test). One file is transcribed at a time by the scheduler's `asr` queue worker.

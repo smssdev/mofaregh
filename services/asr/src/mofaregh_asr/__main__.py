@@ -1,6 +1,6 @@
 """CLI the API's queue job runs:
 
-    python -m mofaregh_asr AUDIO --out result.json [--model medium] [--threads 2] [--language ar]
+    python -m mofaregh_asr AUDIO --out result.json [--model small] [--threads 2] [--beam-size 5] [--language ar]
 
 Prints ``STAGE <loading|transcribing>`` and ``PROGRESS <0..1>`` lines on stdout while it works (the
 first run downloads the model, which can take minutes before any progress), and writes
@@ -16,7 +16,7 @@ import json
 import os
 import sys
 
-from .paragraphs import group_paragraphs
+from .paragraphs import drop_hallucinations, group_paragraphs
 
 # Nudges Whisper towards punctuated Modern Standard Arabic.
 INITIAL_PROMPT = "بسم الله الرحمن الرحيم. الحمد لله رب العالمين، والصلاة والسلام على رسول الله."
@@ -26,10 +26,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mofaregh_asr")
     parser.add_argument("audio")
     parser.add_argument("--out", required=True)
-    parser.add_argument("--model", default="medium")
+    parser.add_argument("--model", default="small")
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--language", default="ar")
     parser.add_argument("--compute-type", default="int8")
+    parser.add_argument("--beam-size", type=int, default=5,
+                        help="5 is the most accurate; 1-2 is several times faster on a one-core server")
     parser.add_argument("--unclear-below", type=float, default=0.5,
                         help="words with a lower probability are reported as unclear, with their times")
     args = parser.parse_args(argv)
@@ -42,12 +44,13 @@ def main(argv: list[str] | None = None) -> int:
     segments, info = model.transcribe(
         args.audio,
         language=args.language,
-        beam_size=5,
+        beam_size=max(1, args.beam_size),
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 700},
         initial_prompt=INITIAL_PROMPT,
         word_timestamps=True,  # exact times (and confidence) of every word, for the "unclear" marks
         condition_on_previous_text=False,  # stops one bad stretch from derailing the rest of a long lecture
+        hallucination_silence_threshold=2.0,  # skips text Whisper invents over long silences (needs word times)
     )
     print("STAGE transcribing", flush=True)
     duration = float(info.duration or 0)
@@ -68,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         "language": info.language,
         "duration": duration,
         "model": args.model,
-        "paragraphs": group_paragraphs(collected, unclear_below=args.unclear_below),
+        "paragraphs": group_paragraphs(drop_hallucinations(collected), unclear_below=args.unclear_below),
     }
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(result, fh, ensure_ascii=False)
