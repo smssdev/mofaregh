@@ -34,8 +34,17 @@ class WhisperTranscriber implements Transcriber
         return $this->model;
     }
 
-    public function transcribe(string $audioPath, Closure $progress, ?string $model = null): array
-    {
+    /** How often a running engine asks whether it should stop. */
+    public const STOP_CHECK_SECONDS = 3;
+
+    public function transcribe(
+        string $audioPath,
+        Closure $progress,
+        ?string $model = null,
+        ?Closure $shouldStop = null,
+        int $offsetMs = 0,
+        ?int $keepBeforeMs = null,
+    ): array {
         if (! $this->isAvailable()) {
             throw new AsrFailed('محرّك التفريغ الآلي غير مثبّت على الخادم.');
         }
@@ -55,11 +64,13 @@ class WhisperTranscriber implements Transcriber
             $this->python, '-m', 'mofaregh_asr', $audioPath,
             '--out', $out, '--model', $model ?? $this->model, '--threads', (string) $this->threads,
             '--beam-size', (string) max(1, $this->beamSize),
+            ...($offsetMs > 0 ? ['--offset', sprintf('%.3F', $offsetMs / 1000)] : []),
+            ...($keepBeforeMs !== null ? ['--keep-before', sprintf('%.3F', $keepBeforeMs / 1000)] : []),
         ], env: $env, timeout: $this->timeout);
 
         try {
             $stage = null;
-            $process->run(function (string $type, string $buffer) use ($progress, &$stage): void {
+            $process->start(function (string $type, string $buffer) use ($progress, &$stage): void {
                 if ($type !== Process::OUT) {
                     return;
                 }
@@ -71,6 +82,21 @@ class WhisperTranscriber implements Transcriber
                     $progress((int) round(min(1, (float) end($m[1])) * 100), $stage);
                 }
             });
+
+            $askedAt = microtime(true);
+            while ($process->isRunning()) {
+                usleep(200_000);
+                $process->checkTimeout();
+                if ($shouldStop !== null && microtime(true) - $askedAt >= self::STOP_CHECK_SECONDS) {
+                    $askedAt = microtime(true);
+                    if ($shouldStop()) {
+                        $process->stop(5);  // SIGTERM, then SIGKILL after five seconds
+
+                        throw new AsrCancelled('أُوقف التفريغ الآلي.');
+                    }
+                }
+            }
+            $process->wait();
 
             if (! $process->isSuccessful()) {
                 throw new AsrFailed($this->failureMessage($process));

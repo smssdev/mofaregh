@@ -60,3 +60,30 @@ def test_known_outro_lines_and_loops_are_dropped():
     ]
     kept = [s["text"] for s in drop_hallucinations(segs)]
     assert kept == ["الحمد لله رب العالمين", "سبحان الله", "سُبحانَ اللهِ.", "والصلاة والسلام على رسول الله"]
+
+
+def test_clip_drops_the_run_on_and_moves_times_into_the_file():
+    from mofaregh_asr.paragraphs import clip_segments
+
+    words = [
+        {"start": 58.0, "end": 59.0, "word": " قال", "probability": 0.9},
+        {"start": 59.2, "end": 59.8, "word": " الله", "probability": 0.9},
+        {"start": 60.4, "end": 61.0, "word": " تعالى", "probability": 0.9},
+    ]
+    segments = [
+        {"start": 0.0, "end": 2.0, "text": " بسم الله", "words": []},
+        {"start": 58.0, "end": 61.0, "text": " قال الله تعالى", "words": words},
+        {"start": 61.5, "end": 62.0, "text": " بعد الحد", "words": []},
+    ]
+    out = clip_segments(segments, keep_before=60.0, offset=120.0)
+    assert [s["text"] for s in out] == [" بسم الله", " قال الله"]
+    assert out[0]["start"] == 120.0
+    assert out[1]["end"] == 179.8
+    assert out[1]["words"][0]["start"] == 178.0
+
+
+def test_clip_without_limits_changes_nothing_but_the_offset():
+    from mofaregh_asr.paragraphs import clip_segments
+
+    out = clip_segments([seg(1, 2, "نص")], offset=0.0)
+    assert out == [{"start": 1.0, "end": 2.0, "text": "نص", "words": []}]

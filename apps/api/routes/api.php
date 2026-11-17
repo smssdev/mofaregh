@@ -35,6 +35,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     Route::get('/audio-files/{audioFile}/transcript', [TranscriptController::class, 'show']);
     Route::put('/audio-files/{audioFile}/transcript', [TranscriptController::class, 'update']);
     Route::post('/audio-files/{audioFile}/transcript/transcribe', [TranscriptController::class, 'transcribe']);
+    Route::post('/audio-files/{audioFile}/transcript/transcribe/cancel', [TranscriptController::class, 'cancel']);
+    Route::delete('/audio-files/{audioFile}/transcript/draft', [TranscriptController::class, 'destroyDraft']);
     Route::get('/audio-files/{audioFile}/transcript/export', [TranscriptController::class, 'export']);
     Route::get('/audio-files/{audioFile}/transcript/versions', [TranscriptVersionController::class, 'index']);
     Route::get('/audio-files/{audioFile}/transcript/versions/{version}', [TranscriptVersionController::class, 'show']);

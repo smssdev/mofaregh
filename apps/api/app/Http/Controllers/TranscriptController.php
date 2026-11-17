@@ -75,11 +75,31 @@ class TranscriptController extends Controller
         return $this->resource($transcript);
     }
 
-    /** Queues the automatic draft. The result lands in asr.paragraphs; the editor decides where to put it. */
-    public function transcribe(AudioFile $audioFile): TranscriptResource|JsonResponse
+    /**
+     * Queues the automatic draft of the whole file, or of one part (from_ms..to_ms) that then replaces the same
+     * stretch of the draft. The result lands in asr.paragraphs; the editor decides where to put it.
+     */
+    public function transcribe(Request $request, AudioFile $audioFile): TranscriptResource|JsonResponse
     {
         $this->authorize('edit', $audioFile);
         abort_unless($audioFile->status === AudioStatus::Ready && $audioFile->normalized_path, 409, 'الملف الصوتي غير جاهز بعد.');
+
+        $durationMs = (int) round(($audioFile->duration_seconds ?? 0) * 1000);
+        $data = $request->validate([
+            'from_ms' => ['nullable', 'integer', 'min:0', 'required_with:to_ms'],
+            'to_ms' => ['nullable', 'integer', 'required_with:from_ms', 'gte:from_ms'],
+        ]);
+        $from = $data['from_ms'] ?? null;
+        $to = $data['to_ms'] ?? null;
+        if ($from !== null && $durationMs > 0) {
+            if ($from >= $durationMs) {
+                return response()->json(['message' => 'بداية الجزء بعد نهاية الملف الصوتي.'], 422);
+            }
+            $to = min((int) $to, $durationMs);
+        }
+        if ($from !== null && $to - $from < 5000) {
+            return response()->json(['message' => 'الجزء أقصر من خمس ثوانٍ.'], 422);
+        }
 
         if (! $this->transcriber->isAvailable()) {
             return response()->json(['message' => 'محرّك التفريغ الآلي غير مثبّت على الخادم بعد.'], 503);
@@ -96,10 +116,46 @@ class TranscriptController extends Controller
         $transcript->update([
             'asr_status' => AsrStatus::Queued, 'asr_progress' => 0, 'asr_stage' => null,
             'asr_error' => null, 'asr_heartbeat_at' => now(),
+            'asr_range_start_ms' => $from, 'asr_range_end_ms' => $from === null ? null : $to,
         ]);
         TranscribeAudio::dispatch($audioFile);
 
         return $this->resource($transcript);
+    }
+
+    /** Stops a queued or running draft. The running engine notices within seconds; finished parts stay. */
+    public function cancel(AudioFile $audioFile): TranscriptResource|JsonResponse
+    {
+        $this->authorize('edit', $audioFile);
+
+        $transcript = $this->transcriptOf($audioFile);
+        if (! $transcript->asr_status->isBusy()) {
+            return response()->json(['message' => 'لا يعمل التفريغ الآلي لهذا الملف الآن.'], 409);
+        }
+
+        $transcript->update(['asr_status' => AsrStatus::Cancelled, 'asr_stage' => null, 'asr_error' => null]);
+        (new UniqueLock(Cache::driver()))->release(new TranscribeAudio($audioFile));
+
+        return $this->resource($transcript->fresh());
+    }
+
+    /** Throws the automatic draft away (not the text in the editor). */
+    public function destroyDraft(AudioFile $audioFile): TranscriptResource|JsonResponse
+    {
+        $this->authorize('edit', $audioFile);
+
+        $transcript = $this->transcriptOf($audioFile);
+        if ($transcript->asr_status->isBusy() && ! $transcript->asrStalled()) {
+            return response()->json(['message' => 'أوقف التفريغ الآلي أولًا.'], 409);
+        }
+
+        $transcript->update([
+            'asr_status' => AsrStatus::None, 'asr_progress' => 0, 'asr_stage' => null, 'asr_error' => null,
+            'asr_result' => null, 'asr_covered' => null, 'asr_model' => null, 'asr_finished_at' => null,
+            'asr_range_start_ms' => null, 'asr_range_end_ms' => null,
+        ]);
+
+        return $this->resource($transcript->fresh());
     }
 
     public function export(Request $request, AudioFile $audioFile): Response|JsonResponse

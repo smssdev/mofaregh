@@ -49,7 +49,7 @@ export interface Paginated<T> {
   data: T[]
 }
 
-export type AsrStatus = 'none' | 'queued' | 'running' | 'done' | 'failed'
+export type AsrStatus = 'none' | 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
 /** A word the recogniser was unsure of: its exact times and where it sits in the paragraph text. */
 export interface UnclearWord {
@@ -115,6 +115,10 @@ export interface Transcript {
     model: string | null
     finished_at: string | null
     paragraphs: AsrParagraph[] | null
+    /** The part being (or last) transcribed; null = the whole file. */
+    range: { start_ms: number; end_ms: number } | null
+    /** Stretches of the audio the draft covers, merged and sorted. */
+    covered: [number, number][]
   }
   export_available: boolean
 }

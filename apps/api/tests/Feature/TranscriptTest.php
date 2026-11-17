@@ -9,8 +9,10 @@ use App\Jobs\TranscribeAudio;
 use App\Models\AudioFile;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\Asr\AsrCancelled;
 use App\Services\Asr\AsrFailed;
 use App\Services\Asr\Transcriber;
+use App\Services\Audio\AudioClipper;
 use App\Services\Export\DocxExporter;
 use App\Services\Export\EditorText;
 use Closure;
@@ -50,6 +52,19 @@ class TranscriptTest extends TestCase
         Storage::disk('audio')->put('normalized/1.webm', 'audio-bytes');
 
         $this->fakeEngines();
+        $engine = get_class(app(Transcriber::class));
+        $engine::$calls = [];
+        $engine::$meanwhile = null;
+
+        // Cutting a part needs ffmpeg; here it only hands back a named stand-in file.
+        $this->app->bind(AudioClipper::class, fn () => new class extends AudioClipper
+        {
+            public function cut(string $path, int $startMs, int $lengthMs): string
+            {
+                return "clip:{$startMs}+{$lengthMs}";
+            }
+        });
+        $this->audio->update(['duration_seconds' => 600]);
     }
 
     /** @param  list<array{start_ms: int, end_ms: int, text: string}>|null  $draft  null makes the engine fail */
@@ -69,12 +84,35 @@ class TranscriptTest extends TestCase
                 return 'fake';
             }
 
-            public function transcribe(string $audioPath, Closure $progress, ?string $model = null): array
-            {
+            /** @var list<array{string, int, ?int}> path, offset, keep-before of every call */
+            public static array $calls = [];
+
+            /** Set by a test: called where a real engine would be busy, e.g. to press stop meanwhile. */
+            public static ?Closure $meanwhile = null;
+
+            public function transcribe(
+                string $audioPath,
+                Closure $progress,
+                ?string $model = null,
+                ?Closure $shouldStop = null,
+                int $offsetMs = 0,
+                ?int $keepBeforeMs = null,
+            ): array {
+                self::$calls[] = [$audioPath, $offsetMs, $keepBeforeMs];
                 $progress(0, 'loading');
                 $progress(50, 'transcribing');
+                if (self::$meanwhile) {
+                    (self::$meanwhile)();
+                }
+                if ($shouldStop && $shouldStop()) {
+                    throw new AsrCancelled('stopped');
+                }
+                if ($this->draft === null) {
+                    throw new AsrFailed('تعذّر التفريغ الآلي: خطأ تجريبي');
+                }
 
-                return $this->draft ?? throw new AsrFailed('تعذّر التفريغ الآلي: خطأ تجريبي');
+                // A real engine returns times in the whole file: the clip's own times moved by the offset.
+                return array_map(fn (array $p): array => ['start_ms' => $p['start_ms'] + $offsetMs, 'end_ms' => $p['end_ms'] + $offsetMs] + $p, $this->draft);
             }
         });
 
@@ -311,5 +349,128 @@ class TranscriptTest extends TestCase
         $this->audio->transcript()->create([]);
         $this->audio->delete();
         $this->assertDatabaseCount('transcripts', 0);
+    }
+
+    private function runJob(): void
+    {
+        (new TranscribeAudio($this->audio))->handle(app(Transcriber::class), app(AudioClipper::class));
+    }
+
+    public function test_a_part_is_cut_transcribed_with_its_offset_and_merged_into_the_draft(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->transcriber, 'web');
+        $engine = get_class(app(Transcriber::class));
+
+        // First minute, then the second: each part adds its own paragraphs and coverage.
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 0, 'to_ms' => 60000])
+            ->assertOk()->assertJsonPath('asr.range', ['start_ms' => 0, 'end_ms' => 60000]);
+        $this->runJob();
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 60000, 'to_ms' => 120000])->assertOk();
+        $this->runJob();
+
+        $this->assertSame([
+            ['clip:0+'.(60000 + TranscribeAudio::RUN_ON_MS), 0, 60000],
+            ['clip:60000+'.(60000 + TranscribeAudio::RUN_ON_MS), 60000, 60000],
+        ], $engine::$calls);
+
+        $this->getJson($this->url())
+            ->assertJsonPath('asr.status', 'done')
+            ->assertJsonPath('asr.covered', [[0, 120000]])
+            ->assertJsonPath('asr.paragraphs.0.start_ms', 0)
+            ->assertJsonPath('asr.paragraphs.1.start_ms', 60000)
+            ->assertJsonCount(2, 'asr.paragraphs');
+
+        // Doing the first minute again replaces it instead of adding a copy.
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 0, 'to_ms' => 60000])->assertOk();
+        $this->runJob();
+        $this->getJson($this->url())->assertJsonCount(2, 'asr.paragraphs')->assertJsonPath('asr.covered', [[0, 120000]]);
+    }
+
+    public function test_a_part_is_kept_inside_the_audio_and_must_be_long_enough(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->transcriber, 'web');
+
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 600000, 'to_ms' => 660000])->assertStatus(422);
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 0, 'to_ms' => 3000])->assertStatus(422);
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 9000])->assertStatus(422);
+
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 570000, 'to_ms' => 900000])
+            ->assertOk()->assertJsonPath('asr.range', ['start_ms' => 570000, 'end_ms' => 600000]);
+    }
+
+    public function test_a_queued_draft_is_stopped_before_it_starts(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->transcriber, 'web');
+        $engine = get_class(app(Transcriber::class));
+
+        $this->postJson($this->url('/transcribe'))->assertOk();
+        $this->postJson($this->url('/transcribe/cancel'))->assertOk()->assertJsonPath('asr.status', 'cancelled');
+        $this->runJob();
+
+        $this->assertSame([], $engine::$calls);
+        $this->getJson($this->url())->assertJsonPath('asr.status', 'cancelled')->assertJsonPath('asr.paragraphs', null);
+        $this->postJson($this->url('/transcribe/cancel'))->assertStatus(409);
+    }
+
+    public function test_stopping_a_running_part_keeps_the_parts_finished_before(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->transcriber, 'web');
+        $engine = get_class(app(Transcriber::class));
+
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 0, 'to_ms' => 60000])->assertOk();
+        $this->runJob();
+
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 60000, 'to_ms' => 120000])->assertOk();
+        $engine::$meanwhile = fn () => $this->postJson($this->url('/transcribe/cancel'))->assertOk();
+        $this->runJob();
+
+        $this->getJson($this->url())
+            ->assertJsonPath('asr.status', 'cancelled')
+            ->assertJsonPath('asr.error', null)
+            ->assertJsonPath('asr.covered', [[0, 60000]])
+            ->assertJsonCount(1, 'asr.paragraphs');
+
+        // Stopped, it can be started again at once.
+        $engine::$meanwhile = null;
+        $this->postJson($this->url('/transcribe'), ['from_ms' => 60000, 'to_ms' => 120000])->assertOk()->assertJsonPath('asr.status', 'queued');
+    }
+
+    public function test_deleting_the_file_while_it_is_transcribed_stops_the_engine(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->transcriber, 'web');
+        $engine = get_class(app(Transcriber::class));
+
+        $this->postJson($this->url('/transcribe'))->assertOk();
+        $engine::$meanwhile = fn () => AudioFile::whereKey($this->audio->id)->delete();
+        $this->runJob();
+
+        $this->assertDatabaseMissing('audio_files', ['id' => $this->audio->id]);
+    }
+
+    public function test_the_draft_can_be_thrown_away_but_not_while_it_runs(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->transcriber, 'web');
+
+        $this->postJson($this->url('/transcribe'))->assertOk();
+        $this->deleteJson($this->url('/draft'))->assertStatus(409);
+        $this->runJob();
+
+        $this->putJson($this->url(), ['version' => 0, 'content' => $this->doc('نص المحرر')])->assertOk();
+        $this->deleteJson($this->url('/draft'))
+            ->assertOk()
+            ->assertJsonPath('asr.status', 'none')
+            ->assertJsonPath('asr.paragraphs', null)
+            ->assertJsonPath('asr.covered', [])
+            ->assertJsonPath('content.content.0.content.0.text', 'نص المحرر');
+
+        $outsider = User::factory()->role(Role::Transcriber)->create();
+        $this->actingAs($outsider, 'web')->deleteJson($this->url('/draft'))->assertForbidden();
+        $this->postJson($this->url('/transcribe/cancel'))->assertForbidden();
     }
 }

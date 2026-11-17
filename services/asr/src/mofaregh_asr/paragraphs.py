@@ -119,3 +119,30 @@ def group_paragraphs(
         }
         for p in paragraphs
     ]
+
+
+def clip_segments(segments: Iterable[Mapping], *, keep_before: float | None = None, offset: float = 0.0) -> list[dict]:
+    """For a part of a file transcribed on its own: drops what starts at or after ``keep_before`` (seconds in the
+    clip; the clip runs a little past it so the last word is not cut in half), cuts a segment that straddles it
+    word by word, then moves every time by ``offset`` so it is a time in the whole file."""
+    out: list[dict] = []
+    for seg in segments:
+        start, end = float(seg["start"]), float(seg["end"])
+        words = list(seg.get("words") or [])
+        text = str(seg["text"])
+        if keep_before is not None:
+            if start >= keep_before:
+                continue
+            if end > keep_before and words:
+                words = [w for w in words if float(w["start"]) < keep_before]
+                if not words:
+                    continue
+                text = "".join(str(w["word"]) for w in words)
+                end = min(end, float(words[-1]["end"]))
+        out.append({
+            "start": start + offset,
+            "end": end + offset,
+            "text": text,
+            "words": [{**w, "start": float(w["start"]) + offset, "end": float(w["end"]) + offset} for w in words],
+        })
+    return out

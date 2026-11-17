@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'audio_file_id', 'title', 'content', 'version', 'updated_by',
     'asr_status', 'asr_progress', 'asr_stage', 'asr_heartbeat_at', 'asr_result', 'asr_model', 'asr_error', 'asr_finished_at',
+    'asr_range_start_ms', 'asr_range_end_ms', 'asr_covered',
 ])]
 class Transcript extends Model
 {
@@ -32,6 +33,9 @@ class Transcript extends Model
         return [
             'content' => 'array',
             'asr_result' => 'array',
+            'asr_covered' => 'array',
+            'asr_range_start_ms' => 'integer',
+            'asr_range_end_ms' => 'integer',
             'asr_status' => AsrStatus::class,
             'version' => 'integer',
             'asr_progress' => 'integer',
