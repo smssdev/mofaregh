@@ -90,6 +90,10 @@ export interface Transcript {
     available: boolean
     status: AsrStatus
     progress: number
+    /** "loading" while the model is downloaded or opened (minutes on the first run), then "transcribing". */
+    stage: 'loading' | 'transcribing' | null
+    /** No sign of life for too long (engine killed, worker not running): it may be started again. */
+    stalled: boolean
     error: string | null
     model: string | null
     finished_at: string | null

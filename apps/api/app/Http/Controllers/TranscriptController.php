@@ -12,9 +12,11 @@ use App\Services\Asr\Transcriber;
 use App\Services\Export\DocxExporter;
 use App\Services\Export\EditorText;
 use App\Services\Export\ExportFailed;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
@@ -80,11 +82,17 @@ class TranscriptController extends Controller
         }
 
         $transcript = $this->transcriptOf($audioFile);
-        if ($transcript->asr_status->isBusy()) {
+        if ($transcript->asr_status->isBusy() && ! $transcript->asrStalled()) {
             return response()->json(['message' => 'التفريغ الآلي لهذا الملف يعمل الآن.'], 409);
         }
 
-        $transcript->update(['asr_status' => AsrStatus::Queued, 'asr_progress' => 0, 'asr_error' => null]);
+        // A stalled earlier run may still hold the unique lock: without this the new job would be dropped silently.
+        (new UniqueLock(Cache::driver()))->release(new TranscribeAudio($audioFile));
+
+        $transcript->update([
+            'asr_status' => AsrStatus::Queued, 'asr_progress' => 0, 'asr_stage' => null,
+            'asr_error' => null, 'asr_heartbeat_at' => now(),
+        ]);
         TranscribeAudio::dispatch($audioFile);
 
         return $this->resource($transcript);

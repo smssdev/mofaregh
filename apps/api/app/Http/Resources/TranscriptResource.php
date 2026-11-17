@@ -29,6 +29,9 @@ class TranscriptResource extends JsonResource
                 'available' => $this->asrAvailable,
                 'status' => $this->asr_status->value,
                 'progress' => $this->asr_progress,
+                'stage' => $this->asr_stage,
+                // No sign of life for too long: the editor offers to start it again.
+                'stalled' => $this->asrStalled(),
                 'error' => $this->asr_error,
                 'model' => $this->asr_model,
                 'finished_at' => $this->asr_finished_at?->toIso8601String(),

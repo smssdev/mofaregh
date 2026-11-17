@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 #[Fillable([
     'audio_file_id', 'title', 'content', 'version', 'updated_by',
-    'asr_status', 'asr_progress', 'asr_result', 'asr_model', 'asr_error', 'asr_finished_at',
+    'asr_status', 'asr_progress', 'asr_stage', 'asr_heartbeat_at', 'asr_result', 'asr_model', 'asr_error', 'asr_finished_at',
 ])]
 class Transcript extends Model
 {
@@ -35,7 +35,25 @@ class Transcript extends Model
             'version' => 'integer',
             'asr_progress' => 'integer',
             'asr_finished_at' => 'datetime',
+            'asr_heartbeat_at' => 'datetime',
         ];
+    }
+
+    /**
+     * A draft that stopped giving signs of life: queued with no worker picking it up, or running with no progress
+     * (the engine was killed, the server restarted). It may then be started again.
+     */
+    public function asrStalled(): bool
+    {
+        if (! $this->asr_status->isBusy()) {
+            return false;
+        }
+        $last = $this->asr_heartbeat_at ?? $this->updated_at;
+        $limit = $this->asr_status === AsrStatus::Queued
+            ? (int) config('mofaregh.asr.queued_stall_minutes')
+            : (int) config('mofaregh.asr.stall_minutes');
+
+        return $last === null || $last->lt(now()->subMinutes($limit));
     }
 
     public function audioFile(): BelongsTo

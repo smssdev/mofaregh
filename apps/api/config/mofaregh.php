@@ -32,6 +32,13 @@ return [
         'threads' => (int) env('ASR_THREADS', 2),
         // Seconds one file may take (default 6 hours: a long lecture on two threads).
         'timeout' => (int) env('ASR_TIMEOUT', 6 * 3600),
+        // Where Whisper models are downloaded (shared storage, so releases reuse them; medium is about 1.5 GB).
+        'model_dir' => env('ASR_MODEL_DIR', storage_path('app/asr-models')),
+        // A running draft with no progress for this long is treated as dead and may be restarted. The first run
+        // downloads the model before any progress, hence the margin.
+        'stall_minutes' => (int) env('ASR_STALL_MINUTES', 30),
+        // A queued draft that no worker picked up in this long: the queue worker is not running.
+        'queued_stall_minutes' => (int) env('ASR_QUEUED_STALL_MINUTES', 5),
     ],
 
 ];

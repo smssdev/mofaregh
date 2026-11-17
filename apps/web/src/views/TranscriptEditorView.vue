@@ -290,7 +290,14 @@ let pollTimer: number | undefined
 const draftDialog = ref(false)
 const asr = computed(() => transcript.value?.asr)
 const hasDraft = computed(() => (asr.value?.paragraphs?.length ?? 0) > 0)
-const asrBusy = computed(() => asr.value?.status === 'queued' || asr.value?.status === 'running')
+const asrBusy = computed(() => (asr.value?.status === 'queued' || asr.value?.status === 'running') && !asr.value.stalled)
+const asrStatusText = computed(() => {
+  const a = asr.value
+  if (!a) return ''
+  if (a.status === 'queued') return 'في انتظار دوره على الخادم…'
+  if (a.stage === 'loading') return 'يجهّز نموذج التفريغ (أول مرة يُنزَّل النموذج وقد يستغرق دقائق)…'
+  return `يفرّغ الآن ${a.progress}%`
+})
 
 function startPolling(): void {
   window.clearInterval(pollTimer)
@@ -299,12 +306,13 @@ function startPolling(): void {
       const { data } = await http.get<Transcript>(url.value)
       if (!transcript.value) return
       transcript.value = { ...transcript.value, asr: data.asr }
-      if (data.asr.status === 'done' || data.asr.status === 'failed' || data.asr.status === 'none') {
+      if (data.asr.status === 'done' || data.asr.status === 'failed' || data.asr.status === 'none' || data.asr.stalled) {
         window.clearInterval(pollTimer)
         if (data.asr.status === 'done') {
           notice.value = 'المسودة الآلية جاهزة.'
           offerDraft()
-        } else if (data.asr.error) notice.value = data.asr.error
+        } else if (data.asr.stalled) notice.value = 'توقف التفريغ الآلي عن التقدّم. يمكنك إعادة تشغيله من اللوحة الجانبية.'
+        else if (data.asr.error) notice.value = data.asr.error
       }
     } catch {
       // a failed poll is retried on the next tick
@@ -673,15 +681,23 @@ onBeforeUnmount(() => {
           <h2 id="asr-title" class="mb-2 text-sm font-semibold">التفريغ الآلي</h2>
           <div v-if="asrBusy" class="space-y-1" role="status">
             <div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full bg-brand-600 transition-all" :style="{ width: `${transcript.asr.progress}%` }" /></div>
-            <p class="tabular text-xs text-slate-600">{{ transcript.asr.status === 'queued' ? 'في الانتظار…' : `يفرّغ الآن ${transcript.asr.progress}%` }}</p>
+            <p class="tabular text-xs text-slate-600">{{ asrStatusText }}</p>
+            <p class="text-xs text-slate-500">يمكنك متابعة الكتابة؛ ستظهر المسودة هنا عند اكتمالها.</p>
           </div>
+          <p v-else-if="transcript.asr.stalled" class="rounded-md bg-amber-50 p-2 text-xs text-amber-800" role="alert">
+            {{
+              transcript.asr.status === 'queued'
+                ? 'لم يبدأ الخادم التفريغ بعد (عامل الطوابير لا يعمل). أعد المحاولة، وإن تكرر فأبلغ مدير النظام.'
+                : 'توقف التفريغ دون أن يكتمل (ربما نفدت ذاكرة الخادم). أعد تشغيله.'
+            }}
+          </p>
           <p v-else-if="!transcript.asr.available" class="text-xs text-amber-700">محرّك التفريغ غير مثبّت على الخادم بعد.</p>
           <p v-else-if="transcript.asr.status === 'failed'" class="text-xs text-red-600">{{ transcript.asr.error }}</p>
           <p v-else-if="hasDraft" class="text-xs text-slate-600">المسودة جاهزة ({{ transcript.asr.paragraphs?.length }} فقرة).</p>
           <p v-else class="text-xs text-slate-500">مسودة أولى من الصوت تصحّحها بدل الكتابة من الصفر.</p>
           <div class="mt-2 flex flex-wrap gap-2">
             <button class="btn-primary px-3 py-1.5 text-xs" :disabled="asrBusy || !transcript.asr.available" @click="transcribe">
-              {{ transcript.asr.status === 'done' ? 'إعادة التفريغ' : 'بدء التفريغ الآلي' }}
+              {{ transcript.asr.stalled ? 'إعادة تشغيل التفريغ' : transcript.asr.status === 'done' ? 'إعادة التفريغ' : 'بدء التفريغ الآلي' }}
             </button>
             <button v-if="hasDraft" class="btn-secondary px-3 py-1.5 text-xs" @click="offerDraft">إدراج المسودة</button>
           </div>
@@ -781,7 +797,7 @@ onBeforeUnmount(() => {
           :zoom="zoom"
           :typing-correction="typingCorrection"
           :asr-available="transcript.asr.available"
-          :asr-status="transcript.asr.status"
+          :asr-status="transcript.asr.stalled ? 'failed' : transcript.asr.status"
           :asr-progress="transcript.asr.progress"
           :has-draft="hasDraft"
           :unclear-count="unclearCount"
