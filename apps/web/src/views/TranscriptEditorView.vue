@@ -29,12 +29,16 @@ import MediaPlayer from '@/components/editor/MediaPlayer.vue'
 import {
   FormulaRules,
   PlaybackHighlight,
+  Proofing,
   TimedParagraph,
   Unclear,
+  applyIssues,
   autoCorrectDocument,
   clearParagraphTime,
   findMatches,
   followPlayback,
+  proofDocument,
+  refreshProofing,
   replaceMatches,
   selectNextMatch,
   stampParagraph,
@@ -42,6 +46,8 @@ import {
   unclearAt,
   unclearRanges,
 } from '@/components/editor/extensions'
+import type { DocIssue } from '@/components/editor/extensions'
+import { KIND_LABEL } from '@/lib/proofing'
 
 const props = defineProps<{ id: number }>()
 
@@ -74,6 +80,7 @@ const editor = useEditor({
     PlaybackHighlight,
     FormulaRules,
     Unclear,
+    Proofing,
   ],
   editorProps: {
     attributes: { dir: 'rtl', lang: 'ar', spellcheck: 'true', 'aria-label': 'نص التفريغ' },
@@ -103,6 +110,7 @@ const editor = useEditor({
   },
   onUpdate() {
     refreshUnclear()
+    refreshIssues()
     if (!ready) return
     markDirty()
     player.value?.typing()
@@ -133,6 +141,58 @@ function stampNow(): void {
   if (!editor.value) return
   clearParagraphTime(editor.value)
   stampParagraph(editor.value, (player.value?.currentTime() ?? 0) * 1000)
+}
+
+// --- proofing: spelling, grammar and punctuation suggestions ----------------------------------------------------
+const issues = ref<DocIssue[]>([])
+const proofingOn = ref(localStorage.getItem('mofaregh.proofing') !== 'off')
+const ignoredTexts = new Set<string>()
+const MAX_LISTED = 60
+
+function refreshIssues(): void {
+  const doc = editor.value?.state.doc
+  issues.value = doc ? proofDocument(doc, ignoredTexts) : []
+}
+
+function proofingStorage(): { enabled: boolean; ignored: Set<string> } | null {
+  return editor.value ? (editor.value.storage as unknown as { proofing: { enabled: boolean; ignored: Set<string> } }).proofing : null
+}
+
+function setProofing(on: boolean): void {
+  proofingOn.value = on
+  localStorage.setItem('mofaregh.proofing', on ? 'on' : 'off')
+  const storage = proofingStorage()
+  if (storage && editor.value) {
+    storage.enabled = on
+    refreshProofing(editor.value)
+  }
+}
+
+function goToIssue(issue: DocIssue): void {
+  editor.value?.chain().focus().setTextSelection({ from: issue.pos, to: issue.end }).scrollIntoView().run()
+}
+
+function fixIssue(issue: DocIssue): void {
+  if (!editor.value) return
+  if (applyIssues(editor.value, [issue]) === 0) notice.value = 'تغيّر النص في هذا الموضع؛ أُعيد التدقيق.'
+  refreshIssues()
+}
+
+function fixAllIssues(): void {
+  if (!editor.value) return
+  const applied = applyIssues(editor.value, issues.value)
+  notice.value = applied === 0 ? 'لا توجد ملاحظات للتصحيح.' : `صُحّح ${applied} موضعًا. Ctrl+Z يتراجع عنها دفعة واحدة.`
+  refreshIssues()
+}
+
+function ignoreIssue(issue: DocIssue): void {
+  ignoredTexts.add(issue.text)
+  const storage = proofingStorage()
+  if (storage && editor.value) {
+    storage.ignored = ignoredTexts
+    refreshProofing(editor.value)
+  }
+  refreshIssues()
 }
 
 // --- unclear words: marked by hand (F3) or by the automatic draft, always with their audio time ----------------
@@ -278,6 +338,8 @@ async function load(): Promise<void> {
     document.title = `${title.value} · مُفرِّغ`
     if (transcriptResponse.data.content) editor.value?.commands.setContent(transcriptResponse.data.content, { emitUpdate: false })
     refreshUnclear()
+    if (!proofingOn.value) setProofing(false)
+    refreshIssues()
     ready = true
     if (transcriptResponse.data.asr.status === 'queued' || transcriptResponse.data.asr.status === 'running') startPolling()
   } catch (error) {
@@ -676,6 +738,35 @@ onBeforeUnmount(() => {
           </ul>
         </section>
 
+        <!-- Proofing -->
+        <section class="card p-3" aria-labelledby="proof-title">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h2 id="proof-title" class="text-sm font-semibold">التدقيق الإملائي والنحوي <span class="tabular text-slate-500">({{ issues.length }})</span></h2>
+            <button class="btn-secondary px-2 py-1 text-xs" :disabled="issues.length === 0" title="يطبّق كل الاقتراحات دفعة واحدة (Ctrl+Z يتراجع)" @click="fixAllIssues">تصحيح الكل</button>
+          </div>
+          <label class="mb-2 flex items-center gap-2 text-xs text-slate-600">
+            <input type="checkbox" class="size-4 accent-brand-700" :checked="proofingOn" @change="setProofing(($event.target as HTMLInputElement).checked)" />
+            تسطير الملاحظات في النص
+          </label>
+          <p v-if="issues.length === 0" class="text-xs text-slate-500">لا ملاحظات. يفحص الأخطاء الإملائية الشائعة وهمزات القطع والألف المقصورة والواو المنفصلة والكلمات المكررة وعلامات الترقيم، ولا يفحص ما بين ﴿﴾ و«».</p>
+          <ul v-else class="max-h-64 space-y-1 overflow-y-auto">
+            <li v-for="issue in issues.slice(0, MAX_LISTED)" :key="`${issue.pos}-${issue.text}`" class="rounded-md px-2 py-1 text-sm hover:bg-slate-50">
+              <button class="flex w-full items-center gap-1.5 text-start focus-visible:outline-2 focus-visible:outline-brand-600" :title="issue.message" @click="goToIssue(issue)">
+                <span class="shrink-0 rounded px-1.5 text-[10px]" :class="issue.kind === 'spelling' ? 'bg-red-50 text-red-700' : issue.kind === 'grammar' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'">{{ KIND_LABEL[issue.kind] }}</span>
+                <span class="truncate text-red-700 line-through decoration-red-300">{{ issue.text.trim() || '␣' }}</span>
+                <span class="text-slate-400">←</span>
+                <span class="truncate font-medium text-emerald-700">{{ issue.suggestion.trim() || 'حذف المسافة' }}</span>
+              </button>
+              <div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+                <span class="truncate">{{ issue.message }}</span>
+                <button class="ms-auto shrink-0 text-brand-700 hover:underline" @click="fixIssue(issue)">تصحيح</button>
+                <button class="shrink-0 hover:underline" @click="ignoreIssue(issue)">تجاهل</button>
+              </div>
+            </li>
+            <li v-if="issues.length > MAX_LISTED" class="px-2 text-xs text-slate-500">و{{ issues.length - MAX_LISTED }} ملاحظة أخرى؛ صحّح ما سبق لتظهر.</li>
+          </ul>
+        </section>
+
         <!-- Automatic draft -->
         <section v-if="transcript" class="card p-3" aria-labelledby="asr-title">
           <h2 id="asr-title" class="mb-2 text-sm font-semibold">التفريغ الآلي</h2>
@@ -930,6 +1021,17 @@ onBeforeUnmount(() => {
   background: #fff3bf;
   cursor: help;
 }
+.doc-page .ProseMirror .proof {
+  text-decoration: underline wavy #e03131;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 4px;
+}
+.doc-page .ProseMirror .proof-grammar {
+  text-decoration-color: #1c7ed6;
+}
+.doc-page .ProseMirror .proof-punctuation {
+  text-decoration-color: #868e96;
+}
 .doc-page .ProseMirror .unclear[data-auto] {
   border-bottom-color: #f08c00;
   background: #fff9db;
@@ -1113,6 +1215,9 @@ onBeforeUnmount(() => {
   .doc-page .ProseMirror .unclear {
     border: 0;
     background: none;
+  }
+  .doc-page .ProseMirror .proof {
+    text-decoration: none;
   }
   .doc-page .ProseMirror p[data-time]::before {
     display: none;
