@@ -1,5 +1,29 @@
-import { describe, expect, it } from 'vitest'
-import { correctText, restoreFormulas, stripTashkeel } from '../autocorrect'
+import { afterEach, describe, expect, it } from 'vitest'
+import { FORMULAS, correctText, formulaBefore, restoreFormulas, setFormulas, stripTashkeel } from '../autocorrect'
+
+describe('formulas from the dictionary', () => {
+  afterEach(() => setFormulas(FORMULAS))
+
+  it('vowels a formula added to the dictionary, in auto-correct and while typing', () => {
+    setFormulas([...FORMULAS, 'عَزَّ وَجَلَّ'])
+    expect(correctText('قال الله عز وجل،')).toBe('قال الله عَزَّ وَجَلَّ،')
+    expect(formulaBefore('قال الله عز  وجل')).toEqual({ length: 'عز  وجل'.length, vowelled: 'عَزَّ وَجَلَّ' })
+    expect(formulaBefore('قال الله عَزَّ وَجَلَّ')).toBeNull() // already vowelled
+    expect(formulaBefore('قال الله')).toBeNull()
+  })
+
+  it('stops vowelling a formula removed from the dictionary, and tries a draft list without changing it', () => {
+    setFormulas(FORMULAS.filter((f) => !f.startsWith('تَبَارَكَ')))
+    expect(correctText('الله تبارك وتعالى')).toBe('الله تبارك وتعالى')
+    expect(restoreFormulas('عز وجل', ['عَزَّ وَجَلَّ'])).toBe('عَزَّ وَجَلَّ')
+    expect(correctText('عز وجل')).toBe('عز وجل')
+  })
+
+  it('ignores an entry written without harakat', () => {
+    setFormulas(['عز وجل'])
+    expect(correctText('عز وجل')).toBe('عز وجل')
+  })
+})
 
 describe('restoreFormulas', () => {
   it('vowels plain and partly vowelled formulas', () => {

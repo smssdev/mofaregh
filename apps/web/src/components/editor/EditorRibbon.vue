@@ -2,7 +2,6 @@
 /** Word-style tools on one row: a tab switcher, then the commands of that tab (scrolls sideways when narrow). */
 import { computed, ref } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
-import { FORMULAS } from '@/lib/autocorrect'
 import type { AsrStatus } from '@/api/types'
 
 const props = defineProps<{
@@ -14,6 +13,8 @@ const props = defineProps<{
   asrProgress: number
   hasDraft: boolean
   unclearCount: number
+  /** Vowelled formulas in use (the dictionary's). */
+  formulas: readonly string[]
 }>()
 
 const emit = defineEmits<{
@@ -193,7 +194,7 @@ const value = (event: Event) => (event.target as HTMLSelectElement).value
           <button class="rbtn-text" title="سطر جديد داخل الفقرة نفسها (Shift+Enter)" @click="chain().setHardBreak().run()">سطر جديد</button>
           <select class="rselect w-40" aria-label="إدراج صيغة مشكولة" @change="(insertText(value($event) + ' '), (($event.target as HTMLSelectElement).value = ''))">
             <option value="">صيغة مشكولة…</option>
-            <option v-for="formula in FORMULAS" :key="formula" :value="formula">{{ formula }}</option>
+            <option v-for="formula in formulas" :key="formula" :value="formula">{{ formula }}</option>
           </select>
         </div>
         <div class="tgroup" role="group" aria-label="رموز">

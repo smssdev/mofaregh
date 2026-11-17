@@ -13,7 +13,7 @@ return new class extends Migration
         // advanced (regular expression) rules, accepted words, and switches for the built-in checks.
         Schema::create('proofing_rules', function (Blueprint $table) {
             $table->id();
-            $table->string('type', 16); // word, phrase, regex, accept, builtin
+            $table->string('type', 16); // word, phrase, regex, formula (a vowelled formula), accept, builtin
             $table->string('pattern', 500);
             $table->string('replacement', 500)->default('');
             $table->string('message', 255)->default('');

@@ -688,6 +688,78 @@
   "prefixes": false
  },
  {
+  "type": "formula",
+  "pattern": "تَبَارَكَ وَتَعَالَى",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "جَلَّ فِي عُلَاهُ",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "جَلَّ وَعَلَا",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "رَضِيَ اللهُ عَنْهَا",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "رَضِيَ اللهُ عَنْهُ",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "رَحِمَهُ اللهُ تَعَالَى",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "رَحِمَهُ اللهُ",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "formula",
+  "pattern": "عَلَيْهِ السَّلَامُ",
+  "replacement": "",
+  "message": "صيغة مشكولة",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
   "type": "builtin",
   "pattern": "separated_waw",
   "replacement": "",

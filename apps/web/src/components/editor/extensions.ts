@@ -8,7 +8,7 @@ import Paragraph from '@tiptap/extension-paragraph'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { ALL_CORRECTIONS, FORMULAS, correctText, endsInsideQuote, stripTashkeel } from '@/lib/autocorrect'
+import { ALL_CORRECTIONS, correctText, endsInsideQuote, formulaBefore, stripTashkeel } from '@/lib/autocorrect'
 import type { CorrectOptions } from '@/lib/autocorrect'
 import { checkText, compileRules } from '@/lib/proofing'
 import type { Checker, Issue } from '@/lib/proofing'
@@ -185,20 +185,22 @@ export const FormulaRules = Extension.create<object, { enabled: boolean }>({
   },
   addInputRules() {
     const storage = this.storage
-    return [...FORMULAS]
-      .sort((a, b) => stripTashkeel(b).length - stripTashkeel(a).length)
-      .map((vowelled) => {
-        const plain = stripTashkeel(vowelled).split(' ').join('\\s+')
-        return new InputRule({
-          find: new RegExp(`(${plain})([\\s،.؛:؟!])$`),
-          handler: ({ state, range, match }) => {
-            if (!storage.enabled) return null
-            const $from = state.doc.resolve(range.from)
-            if (endsInsideQuote($from.parent.textBetween(0, $from.parentOffset, undefined, LEAF))) return null
-            state.tr.insertText(vowelled + (match[2] ?? ' '), range.from, range.to)
-          },
-        })
-      })
+    // One rule for every formula in use (the dictionary may add some while the editor is open): on a space or a
+    // punctuation mark, the formula that ends at the cursor is replaced by its vowelled form.
+    return [
+      new InputRule({
+        find: /[\s،.؛:؟!]$/,
+        handler: ({ state, range, match }) => {
+          if (!storage.enabled) return null
+          const $from = state.doc.resolve(range.from)
+          const before = $from.parent.textBetween(0, $from.parentOffset, undefined, LEAF)
+          if (endsInsideQuote(before)) return null
+          const formula = formulaBefore(before)
+          if (!formula) return null
+          state.tr.insertText(formula.vowelled + match[0], range.from - formula.length, range.to)
+        },
+      }),
+    ]
   },
 })
 

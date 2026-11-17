@@ -186,6 +186,14 @@ class ProofingRuleController extends Controller
                 throw ValidationException::withMessages(['replacement' => 'التصحيح مطابق للخطأ.']);
             }
         }
+        if ($data['type'] === 'formula') {
+            // A formula is its own correction: the editor vowels its plain form wherever it is typed.
+            $data['replacement'] = '';
+            $data['prefixes'] = false;
+            if (! preg_match('/[\x{064B}-\x{0652}\x{0670}]/u', $data['pattern'])) {
+                throw ValidationException::withMessages(['pattern' => 'اكتب الصيغة بتشكيلها الكامل.']);
+            }
+        }
         if ($data['type'] === 'word' && preg_match('/\s/u', $data['pattern'])) {
             throw ValidationException::withMessages(['pattern' => 'الكلمة لا تحوي مسافات؛ اختر النوع «عبارة».']);
         }

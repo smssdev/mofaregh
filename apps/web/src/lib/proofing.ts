@@ -4,6 +4,8 @@
  * - word:    a misspelled word and its correction, optionally also after و/ف (and ب/ك/ل before the article),
  * - phrase:  several words (spaces match any spacing),
  * - regex:   an advanced rule in JavaScript syntax, the replacement may use $1, $2…,
+ * - formula: a fixed formula written fully vowelled (صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ); auto-correct and typing
+ *            vowel it (see autocorrect.ts), the checker itself ignores it,
  * - accept:  text that is right and must never be flagged (واحد is not و + احد),
  * - builtin: the checks written in code (separated و, a repeated word, punctuation, tanween), which the
  *            dictionary only switches on or off and words.
@@ -15,7 +17,7 @@
 import { ARABIC_LETTER as L, MARK_CLASS as M, splitQuoted } from '@/lib/autocorrect'
 
 export type IssueKind = 'spelling' | 'grammar' | 'punctuation'
-export type RuleType = 'word' | 'phrase' | 'regex' | 'accept' | 'builtin'
+export type RuleType = 'word' | 'phrase' | 'regex' | 'formula' | 'accept' | 'builtin'
 export type BuiltinKey = 'separated_waw' | 'repeated_word' | 'latin_punctuation' | 'space_before_punctuation' | 'tanween'
 
 export interface ProofRule {
@@ -50,6 +52,7 @@ export const TYPE_LABEL: Record<RuleType, string> = {
   word: 'كلمة',
   phrase: 'عبارة',
   regex: 'قاعدة متقدمة',
+  formula: 'صيغة مشكولة',
   accept: 'مقبول دائمًا',
   builtin: 'فحص مدمج',
 }
@@ -64,6 +67,7 @@ const DEFAULT_MESSAGE: Record<RuleType, string> = {
   word: 'خطأ إملائي شائع',
   phrase: 'خطأ إملائي شائع',
   regex: 'قاعدة من القاموس',
+  formula: '',
   accept: '',
   builtin: '',
 }

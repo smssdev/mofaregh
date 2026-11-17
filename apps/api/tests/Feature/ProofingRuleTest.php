@@ -58,6 +58,20 @@ class ProofingRuleTest extends TestCase
         $this->assertDatabaseMissing('proofing_rules', ['id' => $id]);
     }
 
+    public function test_a_vowelled_formula_can_be_added_but_not_without_its_harakat(): void
+    {
+        $this->assertDatabaseHas('proofing_rules', ['type' => 'formula', 'pattern' => 'صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ']);
+        $this->actingAs(User::factory()->role(Role::LinguisticReviewer)->create());
+
+        $this->postJson('/api/proofing-rules', ['type' => 'formula', 'pattern' => 'عز وجل'])
+            ->assertUnprocessable()->assertJsonValidationErrors('pattern');
+        $this->postJson('/api/proofing-rules', ['type' => 'formula', 'pattern' => ' عَزَّ   وَجَلَّ ', 'replacement' => 'x'])
+            ->assertCreated()
+            ->assertJsonPath('data.pattern', 'عَزَّ وَجَلَّ')
+            ->assertJsonPath('data.replacement', '')
+            ->assertJsonPath('data.prefixes', false);
+    }
+
     public function test_built_in_checks_can_be_switched_off_but_not_rewritten_or_deleted(): void
     {
         $this->actingAs(User::factory()->role(Role::Admin)->create());

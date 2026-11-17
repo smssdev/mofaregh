@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['type', 'pattern', 'replacement', 'message', 'kind', 'prefixes', 'exceptions', 'note', 'enabled', 'created_by', 'updated_by'])]
 class ProofingRule extends Model
 {
-    public const TYPES = ['word', 'phrase', 'regex', 'accept', 'builtin'];
+    public const TYPES = ['word', 'phrase', 'regex', 'formula', 'accept', 'builtin'];
 
     public const KINDS = ['spelling', 'grammar', 'punctuation'];
 

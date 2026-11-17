@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import { http } from '@/api/http'
 import { compileRules } from '@/lib/proofing'
+import { FORMULAS, setFormulas } from '@/lib/autocorrect'
 import type { ProofRule } from '@/lib/proofing'
 
 export interface ImportResult {
@@ -19,7 +20,12 @@ export const useProofingStore = defineStore('proofing', () => {
 
   /** Recompiled whenever a rule changes; the editor re-checks with the new one. */
   const checker = shallowRef(compileRules([]))
-  const recompile = () => (checker.value = compileRules(rules.value))
+  /** Vowelled formulas (rules of type "formula"): auto-correct, typing and the ribbon use them. */
+  const formulas = computed(() => (loaded.value ? rules.value.filter((r) => r.type === 'formula' && r.enabled).map((r) => r.pattern) : [...FORMULAS]))
+  const recompile = () => {
+    checker.value = compileRules(rules.value)
+    setFormulas(formulas.value)
+  }
 
   async function load(force = false): Promise<void> {
     if (loaded.value && !force) return
@@ -64,5 +70,5 @@ export const useProofingStore = defineStore('proofing', () => {
     return byType
   })
 
-  return { rules, canEdit, loaded, checker, counts, load, save, remove, importRules }
+  return { rules, canEdit, loaded, checker, formulas, counts, load, save, remove, importRules }
 })

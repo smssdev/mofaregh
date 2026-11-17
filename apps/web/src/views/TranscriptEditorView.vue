@@ -20,7 +20,7 @@ import { TableKit } from '@tiptap/extension-table'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import { errorMessage, http } from '@/api/http'
 import type { AsrParagraph, AudioFile, EditorNode, Transcript } from '@/api/types'
-import { correctText } from '@/lib/autocorrect'
+import { correctText, stripTashkeel } from '@/lib/autocorrect'
 import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, actionFor, comboOf, formatClock, isAllowedCombo, loadShortcuts, saveShortcuts } from '@/lib/shortcuts'
 import type { ShortcutAction } from '@/lib/shortcuts'
 import AppModal from '@/components/AppModal.vue'
@@ -213,7 +213,9 @@ function addMistakeFromSelection(): void {
     to += right.length
   }
   const text = state.doc.textBetween(from, to, ' ').trim()
-  openRuleDialog({ type: /\s/.test(text) ? 'phrase' : 'word', pattern: text, replacement: '', prefixes: !/\s/.test(text) }, paragraph)
+  // Selected text written with its harakat is most likely a formula to vowel everywhere.
+  if (stripTashkeel(text) !== text) openRuleDialog({ type: 'formula', pattern: text, replacement: '', prefixes: false }, stripTashkeel(paragraph))
+  else openRuleDialog({ type: /\s/.test(text) ? 'phrase' : 'word', pattern: text, replacement: '', prefixes: !/\s/.test(text) }, paragraph)
 }
 
 async function acceptAlways(issue: DocIssue): Promise<void> {
@@ -818,7 +820,7 @@ onBeforeUnmount(() => {
             <button class="btn-secondary px-2 py-1 text-xs" :disabled="issues.length === 0" title="يطبّق كل الاقتراحات دفعة واحدة (Ctrl+Z يتراجع)" @click="fixAllIssues">تصحيح الكل</button>
           </div>
           <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-            <button v-if="dictionary.canEdit" class="text-brand-700 hover:underline" title="يضيف الكلمة المحددة (أو التي عند المؤشر) إلى القاموس مع تصحيحها" @click="addMistakeFromSelection">+ إضافة خطأ شائع</button>
+            <button v-if="dictionary.canEdit" class="text-brand-700 hover:underline" title="يضيف الكلمة المحددة (أو التي عند المؤشر) إلى القاموس مع تصحيحها؛ وإن كان النص المحدد مشكولًا يُضاف صيغةً مشكولة" @click="addMistakeFromSelection">+ إضافة خطأ شائع</button>
             <RouterLink :to="{ name: 'dictionary' }" target="_blank" class="text-slate-500 hover:underline">القاموس ({{ dictionary.rules.length }})</RouterLink>
           </div>
           <label class="mb-2 flex items-center gap-2 text-xs text-slate-600">
@@ -970,6 +972,7 @@ onBeforeUnmount(() => {
           :asr-progress="transcript.asr.progress"
           :has-draft="hasDraft"
           :unclear-count="unclearCount"
+          :formulas="dictionary.formulas"
           @mark-unclear="markUnclear"
           @next-unclear="nextUnclear"
           @clear-unclear="clearUnclear"

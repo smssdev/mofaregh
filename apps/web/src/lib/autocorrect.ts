@@ -5,7 +5,7 @@
  * Quoted scripture typed into the text, ﴿…﴾ and «…», is never touched.
  */
 
-/** Fixed formulas, always written fully vowelled (same list as formulas.py). */
+/** The formulas that shipped, always written fully vowelled (same list as formulas.py); the dictionary can add more. */
 export const FORMULAS: readonly string[] = [
   'تَبَارَكَ وَتَعَالَى',
   'صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ',
@@ -31,16 +31,59 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-const COMPILED: readonly { pattern: RegExp; vowelled: string }[] = [...FORMULAS]
-  .sort((a, b) => stripTashkeel(b).length - stripTashkeel(a).length) // longest first: "رحمه الله تعالى" before "رحمه الله"
-  .map((vowelled) => {
-    const body = stripTashkeel(vowelled)
-      .split(' ')
-      .map((word) => [...word].map((ch) => `${escapeRegExp(ch)}[${MARK_CLASS}]*`).join(''))
-      .join('\\s+')
-    // Must not run into a following letter or mark ("عنه" inside "عَنْهَا").
-    return { pattern: new RegExp(`${body}(?![${ARABIC_LETTER}${MARK_CLASS}])`, 'g'), vowelled }
-  })
+interface CompiledFormula {
+  /** Finds the formula, plain or partly vowelled, anywhere in a text. */
+  pattern: RegExp
+  /** The same, ending where the cursor is (typing). */
+  typed: RegExp
+  vowelled: string
+}
+
+/** Longest first, so "رحمه الله تعالى" wins over "رحمه الله"; a later entry with the same letters replaces an earlier one. */
+function compileFormulas(list: readonly string[]): CompiledFormula[] {
+  const byLetters = new Map<string, string>()
+  for (const formula of list) {
+    const vowelled = formula.trim().replace(/\s+/g, ' ')
+    const letters = stripTashkeel(vowelled)
+    if (letters && letters !== vowelled) byLetters.set(letters, vowelled)
+  }
+  return [...byLetters.entries()]
+    .sort(([a], [b]) => b.length - a.length)
+    .map(([letters, vowelled]) => {
+      const body = letters
+        .split(' ')
+        .map((word) => [...word].map((ch) => `${escapeRegExp(ch)}[${MARK_CLASS}]*`).join(''))
+        .join('\\s+')
+      return {
+        // Must not run into a following letter or mark ("عنه" inside "عَنْهَا").
+        pattern: new RegExp(`${body}(?![${ARABIC_LETTER}${MARK_CLASS}])`, 'g'),
+        typed: new RegExp(`${body}$`),
+        vowelled,
+      }
+    })
+}
+
+/** The formulas in use: the shipped list until the dictionary (rules of type "formula") replaces it. */
+let activeList: readonly string[] = FORMULAS
+let active = compileFormulas(FORMULAS)
+
+export function setFormulas(list: readonly string[]): void {
+  activeList = [...list]
+  active = compileFormulas(list)
+}
+
+export function activeFormulas(): readonly string[] {
+  return activeList
+}
+
+/** While typing: the formula that ends at the cursor, unless it is already vowelled exactly. */
+export function formulaBefore(textBefore: string): { length: number; vowelled: string } | null {
+  for (const { typed, vowelled } of active) {
+    const match = typed.exec(textBefore)
+    if (match) return match[0] === vowelled ? null : { length: match[0].length, vowelled }
+  }
+  return null
+}
 
 const CLOSER: Record<string, string> = { '﴿': '﴾', '«': '»' }
 
@@ -81,8 +124,10 @@ function outsideQuotes(text: string, fix: (plain: string) => string): string {
     .join('')
 }
 
-export function restoreFormulas(text: string): string {
-  return outsideQuotes(text, (plain) => COMPILED.reduce((acc, { pattern, vowelled }) => acc.replace(pattern, vowelled), plain))
+/** Vowels the formulas in use (or the given list, to try a new one before saving it). */
+export function restoreFormulas(text: string, list?: readonly string[]): string {
+  const compiled = list ? compileFormulas(list) : active
+  return outsideQuotes(text, (plain) => compiled.reduce((acc, { pattern, vowelled }) => acc.replace(pattern, vowelled), plain))
 }
 
 export interface CorrectOptions {

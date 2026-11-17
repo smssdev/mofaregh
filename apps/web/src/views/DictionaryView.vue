@@ -24,7 +24,7 @@ const statusFilter = ref<'' | 'on' | 'off'>('')
 const PAGE = 100
 const shown = ref(PAGE)
 
-const types: RuleType[] = ['word', 'phrase', 'regex', 'accept', 'builtin']
+const types: RuleType[] = ['word', 'phrase', 'formula', 'regex', 'accept', 'builtin']
 const kinds = Object.keys(KIND_LABEL) as IssueKind[]
 
 const filtered = computed(() => {
@@ -219,10 +219,10 @@ onMounted(async () => {
                   <p v-if="broken.get(rule.id)" class="text-xs font-normal text-red-600">{{ broken.get(rule.id) }}</p>
                   <p v-if="rule.note" class="text-xs font-normal text-slate-400">{{ rule.note }}</p>
                 </td>
-                <td class="px-3 py-2 text-emerald-700">{{ rule.type === 'accept' ? '—' : rule.type === 'builtin' ? '' : rule.replacement || '(حذف)' }}</td>
+                <td class="px-3 py-2 text-emerald-700">{{ rule.type === 'accept' ? '—' : rule.type === 'formula' ? 'تُشكَّل تلقائيًا' : rule.type === 'builtin' ? '' : rule.replacement || '(حذف)' }}</td>
                 <td class="px-3 py-2 whitespace-nowrap">
                   <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ TYPE_LABEL[rule.type] }}</span>
-                  <span v-if="rule.type !== 'accept'" class="ms-1 text-xs text-slate-500">{{ KIND_LABEL[rule.kind] }}</span>
+                  <span v-if="rule.type !== 'accept' && rule.type !== 'formula'" class="ms-1 text-xs text-slate-500">{{ KIND_LABEL[rule.kind] }}</span>
                 </td>
                 <td class="px-3 py-2 text-xs text-slate-600">{{ rule.message }}</td>
                 <td class="px-3 py-2">
@@ -275,6 +275,7 @@ onMounted(async () => {
           <h2 class="mb-1 text-sm font-semibold text-slate-800">أنواع القواعد</h2>
           <p><b>كلمة</b>: كلمة خاطئة وصوابها، وتُطبَّق مع السوابق إن شئت.</p>
           <p><b>عبارة</b>: عدة كلمات تُصحَّح معًا.</p>
+          <p><b>صيغة مشكولة</b>: صيغة تُشكَّل تلقائيًا أينما كُتبت (صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ).</p>
           <p><b>قاعدة متقدمة</b>: تعبير نمطي لحالات لا تغطيها الكلمات.</p>
           <p><b>مقبول دائمًا</b>: نص صحيح لا يُعلَّم أبدًا.</p>
           <p><b>فحص مدمج</b>: فحوص المحرر الثابتة، تُشغَّل وتُوقف من هنا.</p>

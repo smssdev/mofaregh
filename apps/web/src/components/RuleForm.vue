@@ -8,6 +8,7 @@ import { errorMessage, validationErrors } from '@/api/http'
 import { BUILTIN_LABEL, KIND_LABEL, TYPE_LABEL, checkText, compileRules, regexProblem } from '@/lib/proofing'
 import type { BuiltinKey, IssueKind, ProofRule, RuleType } from '@/lib/proofing'
 import { useProofingStore } from '@/stores/proofing'
+import { restoreFormulas, stripTashkeel } from '@/lib/autocorrect'
 
 const props = defineProps<{ rule?: ProofRule | null; initial?: Partial<ProofRule>; sample?: string }>()
 const emit = defineEmits<{ saved: [rule: ProofRule]; cancel: [] }>()
@@ -21,14 +22,16 @@ const errors = ref<Record<string, string>>({})
 const saving = ref(false)
 
 const builtin = computed(() => form.type === 'builtin')
-const editableTypes: RuleType[] = ['word', 'phrase', 'regex', 'accept']
+const editableTypes: RuleType[] = ['word', 'phrase', 'formula', 'regex', 'accept']
+/** Types with a separate correction field (a formula is its own correction). */
+const hasReplacement = computed(() => !['accept', 'formula'].includes(form.type))
 const kinds = Object.keys(KIND_LABEL) as IssueKind[]
 
 watch(
   () => form.type,
   (type) => {
     if (type !== 'word') form.prefixes = false
-    if (type === 'accept') form.replacement = ''
+    if (type === 'accept' || type === 'formula') form.replacement = ''
   },
 )
 
@@ -39,20 +42,25 @@ const exceptions = computed(() =>
     .filter(Boolean),
 )
 
-const regexError = computed(() => (form.type === 'regex' && form.pattern ? regexProblem(form.pattern) : null))
+const regexError = computed(() => {
+  if (form.type === 'regex' && form.pattern) return regexProblem(form.pattern)
+  if (form.type === 'formula' && form.pattern.trim() && stripTashkeel(form.pattern) === form.pattern) return 'اكتب الصيغة بتشكيلها الكامل، مثل «صَلَّى اللهُ عَلَيْهِ وَسَلَّمَ».'
+  return null
+})
 
 /** What this rule alone would find in the sample (an accepted text: what it stops the dictionary flagging). */
 const preview = computed(() => {
   const text = sample.value
   if (!text.trim() || !form.pattern.trim() || regexError.value) return null
   const draft: ProofRule = { ...form, enabled: true, exceptions: exceptions.value }
+  if (form.type === 'formula') return { issues: [], accepted: 0, vowelled: restoreFormulas(text, [form.pattern]) }
   if (form.type === 'accept') {
     const others = store.rules.filter((r) => r.id !== form.id)
     const before = checkText(text, compileRules(others)).length
     const after = checkText(text, compileRules([...others, draft])).length
-    return { issues: [], accepted: before - after }
+    return { issues: [], accepted: before - after, vowelled: '' }
   }
-  return { issues: checkText(text, compileRules([draft])), accepted: 0 }
+  return { issues: checkText(text, compileRules([draft])), accepted: 0, vowelled: '' }
 })
 
 async function save() {
@@ -93,18 +101,19 @@ async function save() {
       <p class="mt-1 text-xs text-slate-500">
         <template v-if="form.type === 'word'">كلمة واحدة خاطئة وصوابها، مثل «هاذا» ← «هذا».</template>
         <template v-else-if="form.type === 'phrase'">عدة كلمات، والمسافات بينها تطابق أي عدد من المسافات، مثل «ان شاء الله» ← «إن شاء الله».</template>
+        <template v-else-if="form.type === 'formula'">صيغة تُكتب دائمًا مشكولة. تُشكَّل تلقائيًا أثناء الكتابة وبالتصحيح الآلي وعند إدراج المسودة، وتظهر في قائمة «صيغة مشكولة» في شريط الإدراج.</template>
         <template v-else-if="form.type === 'regex'">تعبير نمطي بصيغة JavaScript؛ يمكن أن يستعمل التصحيح المجموعات ‎$1 و‎$2.</template>
         <template v-else>نص صحيح لا يُعلَّم أبدًا، ولو طابقته قاعدة أخرى (مثل «واحد» حتى لا يُقترح «وأحد»).</template>
       </p>
     </div>
 
-    <div v-if="!builtin" class="grid gap-4" :class="form.type === 'accept' ? '' : 'sm:grid-cols-2'">
+    <div v-if="!builtin" class="grid gap-4" :class="hasReplacement ? 'sm:grid-cols-2' : ''">
       <div>
-        <label class="label" for="r-pattern">{{ form.type === 'regex' ? 'التعبير النمطي' : form.type === 'accept' ? 'النص المقبول' : 'الخطأ' }}</label>
+        <label class="label" for="r-pattern">{{ form.type === 'regex' ? 'التعبير النمطي' : form.type === 'accept' ? 'النص المقبول' : form.type === 'formula' ? 'الصيغة مشكولة كاملة' : 'الخطأ' }}</label>
         <input id="r-pattern" v-model="form.pattern" class="input" :dir="form.type === 'regex' ? 'ltr' : 'rtl'" required maxlength="500" autocomplete="off" />
         <p v-if="errors.pattern || regexError" class="mt-1 text-sm text-red-600">{{ errors.pattern || regexError }}</p>
       </div>
-      <div v-if="form.type !== 'accept'">
+      <div v-if="hasReplacement">
         <label class="label" for="r-replacement">{{ form.type === 'regex' ? 'التصحيح (اتركه فارغًا للحذف)' : 'الصواب' }}</label>
         <input id="r-replacement" v-model="form.replacement" class="input" maxlength="500" autocomplete="off" :required="form.type !== 'regex'" />
         <p v-if="errors.replacement" class="mt-1 text-sm text-red-600">{{ errors.replacement }}</p>
@@ -116,7 +125,7 @@ async function save() {
       <span>تطبيقها أيضًا مع السوابق: «و» و«ف»، و«ب» و«ك» و«ل» قبل «ال» <span class="text-slate-500">(والى ← وإلى، بالاسلام ← بالإسلام، للاسلام ← للإسلام)</span></span>
     </label>
 
-    <div v-if="form.type !== 'accept'" class="grid gap-4 sm:grid-cols-[1fr_10rem]">
+    <div v-if="hasReplacement" class="grid gap-4 sm:grid-cols-[1fr_10rem]">
       <div>
         <label class="label" for="r-message">الرسالة التي تظهر للمفرّغ</label>
         <input id="r-message" v-model="form.message" class="input" maxlength="255" placeholder="مثل: همزة القطع" />
@@ -148,7 +157,10 @@ async function save() {
       <label class="label" for="r-sample">جرّب القاعدة على نص</label>
       <textarea id="r-sample" v-model="sample" class="input min-h-16" placeholder="اكتب جملة فيها الخطأ…" />
       <template v-if="preview">
-        <p v-if="form.type === 'accept'" class="mt-2 text-xs" :class="preview.accepted ? 'text-emerald-700' : 'text-slate-500'">
+        <p v-if="form.type === 'formula'" class="mt-2 text-sm leading-7" :class="preview.vowelled === sample ? 'text-amber-700' : 'text-emerald-800'">
+          {{ preview.vowelled === sample ? 'لا توجد الصيغة في هذا النص (اكتبها دون تشكيل للتجربة).' : preview.vowelled }}
+        </p>
+        <p v-else-if="form.type === 'accept'" class="mt-2 text-xs" :class="preview.accepted ? 'text-emerald-700' : 'text-slate-500'">
           {{ preview.accepted ? `تمنع ${preview.accepted} ملاحظة في هذا النص.` : 'لا تغيّر شيئًا في هذا النص.' }}
         </p>
         <p v-else-if="preview.issues.length === 0" class="mt-2 text-xs text-amber-700">لا تجد القاعدة شيئًا في هذا النص.</p>
