@@ -37,6 +37,10 @@ class TranscriptResource extends JsonResource
                 'finished_at' => $this->asr_finished_at?->toIso8601String(),
                 // The draft itself is only sent once it exists; the editor inserts it on request.
                 'paragraphs' => $this->asr_result,
+                // The part being (or last) transcribed; null = the whole file.
+                'range' => $this->asr_range_start_ms === null ? null : ['start_ms' => $this->asr_range_start_ms, 'end_ms' => $this->asr_range_end_ms],
+                // Stretches of the audio the draft already covers: [[start_ms, end_ms], …].
+                'covered' => $this->asr_covered ?? [],
             ],
             'export_available' => $this->exportAvailable,
         ];

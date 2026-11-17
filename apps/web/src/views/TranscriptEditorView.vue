@@ -22,8 +22,9 @@ import { errorMessage, http } from '@/api/http'
 import type { AsrParagraph, AudioFile, EditorDoc, EditorNode, Transcript, TranscriptVersionDetail, TranscriptVersionSummary } from '@/api/types'
 import { clearLocalDraft, draftDecision, readLocalDraft, writeLocalDraft } from '@/lib/localDraft'
 import type { LocalDraft } from '@/lib/localDraft'
+import { describeCovered, inPart, nextStart, shortClock } from '@/lib/asrParts'
 import { correctText } from '@/lib/autocorrect'
-import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, actionFor, comboOf, formatClock, isAllowedCombo, loadShortcuts, saveShortcuts } from '@/lib/shortcuts'
+import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, actionFor, comboOf, formatClock, isAllowedCombo, loadShortcuts, parseClock, saveShortcuts } from '@/lib/shortcuts'
 import type { ShortcutAction } from '@/lib/shortcuts'
 import AppModal from '@/components/AppModal.vue'
 import RuleForm from '@/components/RuleForm.vue'
@@ -580,9 +581,33 @@ const asrBusy = computed(() => (asr.value?.status === 'queued' || asr.value?.sta
 const asrStatusText = computed(() => {
   const a = asr.value
   if (!a) return ''
-  if (a.status === 'queued') return 'في انتظار دوره على الخادم…'
-  if (a.stage === 'loading') return 'يجهّز نموذج التفريغ (أول مرة يُنزَّل النموذج وقد يستغرق دقائق)…'
-  return `يفرّغ الآن ${a.progress}%`
+  const part = a.range ? ` الجزء ${shortClock(a.range.start_ms)}–${shortClock(a.range.end_ms)}` : ''
+  if (a.status === 'queued') return `في انتظار دوره على الخادم…${part}`
+  if (a.stage === 'loading') return `يجهّز نموذج التفريغ (أول مرة يُنزَّل النموذج وقد يستغرق دقائق)…${part}`
+  return `يفرّغ الآن${part} ${a.progress}%`
+})
+
+// Part by part: the whole file, or a stretch of it (the first minute, then the next…), each merged into the draft.
+const durationMs = computed(() => (file.value?.duration_seconds ? Math.round(file.value.duration_seconds * 1000) : null))
+const asrMode = ref<'part' | 'whole'>(localStorage.getItem('mofaregh.asrMode') === 'whole' ? 'whole' : 'part')
+const partMinutes = ref(Number(localStorage.getItem('mofaregh.asrPartMinutes')) || 1)
+const partFrom = ref('0:00')
+const asrCovered = computed(() => asr.value?.covered ?? [])
+const suggestedStart = computed(() => nextStart(asrCovered.value, durationMs.value))
+const PART_CHOICES = [1, 2, 5, 10, 15, 30]
+watch(asrMode, (m) => localStorage.setItem('mofaregh.asrMode', m))
+watch(partMinutes, (m) => localStorage.setItem('mofaregh.asrPartMinutes', String(m)))
+// The "from" box follows the next uncovered moment until the user types something else.
+watch(suggestedStart, (ms) => {
+  if (ms !== null) partFrom.value = shortClock(ms)
+}, { immediate: true })
+
+const partRange = computed(() => {
+  const seconds = parseClock(partFrom.value)
+  if (seconds === null) return null
+  const start = Math.round(seconds * 1000)
+  const end = start + partMinutes.value * 60_000
+  return { start, end: durationMs.value ? Math.min(end, durationMs.value) : end }
 })
 
 function startPolling(): void {
@@ -592,12 +617,14 @@ function startPolling(): void {
       const { data } = await http.get<Transcript>(url.value)
       if (!transcript.value) return
       transcript.value = { ...transcript.value, asr: data.asr }
-      if (data.asr.status === 'done' || data.asr.status === 'failed' || data.asr.status === 'none' || data.asr.stalled) {
+      if (data.asr.status !== 'queued' && data.asr.status !== 'running' || data.asr.stalled) {
         window.clearInterval(pollTimer)
         if (data.asr.status === 'done') {
-          notice.value = 'المسودة الآلية جاهزة.'
-          offerDraft()
-        } else if (data.asr.stalled) notice.value = 'توقف التفريغ الآلي عن التقدّم. يمكنك إعادة تشغيله من اللوحة الجانبية.'
+          const r = data.asr.range
+          notice.value = r ? `تم تفريغ الجزء ${shortClock(r.start_ms)}–${shortClock(r.end_ms)}.` : 'المسودة الآلية جاهزة.'
+          offerDraft(r ? 'part' : 'all')
+        } else if (data.asr.status === 'cancelled') notice.value = 'أُوقف التفريغ الآلي. الأجزاء التي اكتملت قبله باقية في المسودة.'
+        else if (data.asr.stalled) notice.value = 'توقف التفريغ الآلي عن التقدّم. يمكنك إعادة تشغيله من اللوحة الجانبية.'
         else if (data.asr.error) notice.value = data.asr.error
       }
     } catch {
@@ -608,11 +635,49 @@ function startPolling(): void {
 
 async function transcribe(): Promise<void> {
   notice.value = ''
+  let body: { from_ms: number; to_ms: number } | undefined
+  if (asrMode.value === 'part') {
+    const range = partRange.value
+    if (!range) {
+      notice.value = 'اكتب بداية الجزء بصيغة دقائق:ثوانٍ، مثل 1:30.'
+      return
+    }
+    body = { from_ms: range.start, to_ms: range.end }
+  }
   try {
-    const { data } = await http.post<Transcript>(`${url.value}/transcribe`)
+    const { data } = await http.post<Transcript>(`${url.value}/transcribe`, body)
     if (transcript.value) transcript.value = { ...transcript.value, asr: data.asr }
-    notice.value = 'بدأ التفريغ الآلي على الخادم. يمكنك متابعة العمل، وستظهر المسودة هنا عند اكتمالها.'
+    notice.value = body
+      ? `بدأ تفريغ الجزء ${shortClock(body.from_ms)}–${shortClock(Math.min(body.to_ms, data.asr.range?.end_ms ?? body.to_ms))}. يمكنك متابعة العمل.`
+      : 'بدأ التفريغ الآلي على الخادم. يمكنك متابعة العمل، وستظهر المسودة هنا عند اكتمالها.'
     startPolling()
+  } catch (error) {
+    notice.value = errorMessage(error)
+  }
+}
+
+const stopping = ref(false)
+async function cancelAsr(): Promise<void> {
+  stopping.value = true
+  try {
+    const { data } = await http.post<Transcript>(`${url.value}/transcribe/cancel`)
+    if (transcript.value) transcript.value = { ...transcript.value, asr: data.asr }
+    window.clearInterval(pollTimer)
+    notice.value = 'أُوقف التفريغ الآلي. الأجزاء التي اكتملت قبله باقية في المسودة.'
+  } catch (error) {
+    notice.value = errorMessage(error)
+  } finally {
+    stopping.value = false
+  }
+}
+
+async function deleteDraft(): Promise<void> {
+  if (!window.confirm('حذف المسودة الآلية كلها؟ النص المكتوب في الصفحة لا يتأثر.')) return
+  try {
+    const { data } = await http.delete<Transcript>(`${url.value}/draft`)
+    if (transcript.value) transcript.value = { ...transcript.value, asr: data.asr }
+    partFrom.value = '0:00'
+    notice.value = 'حُذفت المسودة الآلية.'
   } catch (error) {
     notice.value = errorMessage(error)
   }
@@ -637,14 +702,22 @@ function draftRuns(paragraph: AsrParagraph): EditorNode[] {
   return runs
 }
 
-function offerDraft(): void {
+/** "part": only the paragraphs of the part just transcribed (they go after the text already in the page). */
+const draftScope = ref<'all' | 'part'>('all')
+const draftParagraphs = computed(() => {
+  const all = (asr.value?.paragraphs ?? []) as AsrParagraph[]
+  return draftScope.value === 'part' && asr.value?.range ? inPart(all, asr.value.range) : all
+})
+
+function offerDraft(scope: 'all' | 'part' = 'all'): void {
   if (!hasDraft.value) return
+  draftScope.value = scope
   if (editor.value?.isEmpty) insertDraft('replace')
   else draftDialog.value = true
 }
 
 function insertDraft(mode: 'replace' | 'append'): void {
-  const paragraphs = (asr.value?.paragraphs ?? []) as AsrParagraph[]
+  const paragraphs = draftParagraphs.value
   const nodes = paragraphs.map((p) => ({ type: 'paragraph', attrs: { start: p.start_ms }, content: draftRuns(p) }))
   if (!editor.value || nodes.length === 0) return
   if (mode === 'replace') editor.value.commands.setContent({ type: 'doc', content: nodes }, { emitUpdate: true })
@@ -1012,6 +1085,9 @@ onBeforeUnmount(() => {
             <div class="h-2 overflow-hidden rounded-full bg-slate-200"><div class="h-full bg-brand-600 transition-all" :style="{ width: `${transcript.asr.progress}%` }" /></div>
             <p class="tabular text-xs text-slate-600">{{ asrStatusText }}</p>
             <p class="text-xs text-slate-500">يمكنك متابعة الكتابة؛ ستظهر المسودة هنا عند اكتمالها.</p>
+            <button class="btn-danger mt-1 px-3 py-1.5 text-xs" :disabled="stopping" @click="cancelAsr">
+              {{ stopping ? 'يوقف…' : 'إيقاف التفريغ' }}
+            </button>
           </div>
           <p v-else-if="transcript.asr.stalled" class="rounded-md bg-amber-50 p-2 text-xs text-amber-800" role="alert">
             {{
@@ -1022,13 +1098,62 @@ onBeforeUnmount(() => {
           </p>
           <p v-else-if="!transcript.asr.available" class="text-xs text-amber-700">محرّك التفريغ غير مثبّت على الخادم بعد.</p>
           <p v-else-if="transcript.asr.status === 'failed'" class="text-xs text-red-600">{{ transcript.asr.error }}</p>
-          <p v-else-if="hasDraft" class="text-xs text-slate-600">المسودة جاهزة ({{ transcript.asr.paragraphs?.length }} فقرة).</p>
-          <p v-else class="text-xs text-slate-500">مسودة أولى من الصوت تصحّحها بدل الكتابة من الصفر.</p>
+          <p v-else-if="transcript.asr.status === 'cancelled'" class="text-xs text-amber-700">أُوقف التفريغ. الأجزاء التي اكتملت قبله باقية.</p>
+          <p v-else-if="!hasDraft" class="text-xs text-slate-500">مسودة أولى من الصوت تصحّحها بدل الكتابة من الصفر. فرّغ الملف كاملًا، أو جزءًا بعد جزء.</p>
+          <p v-if="hasDraft && !asrBusy" class="mt-1 text-xs text-slate-600">
+            المسودة: {{ transcript.asr.paragraphs?.length }} فقرة<template v-if="asrCovered.length">، تغطي <span class="tabular">{{ describeCovered(asrCovered) }}</span></template>.
+          </p>
+
+          <div v-if="!asrBusy && transcript.asr.available" class="mt-3 space-y-2 border-t border-slate-100 pt-2">
+            <div class="flex gap-1 rounded-lg bg-slate-100 p-0.5 text-xs" role="radiogroup" aria-label="ما يُفرَّغ">
+              <button
+                v-for="m in (['part', 'whole'] as const)"
+                :key="m"
+                role="radio"
+                :aria-checked="asrMode === m"
+                class="flex-1 rounded-md px-2 py-1"
+                :class="asrMode === m ? 'bg-white font-semibold shadow-sm' : 'text-slate-600'"
+                @click="asrMode = m"
+              >
+                {{ m === 'part' ? 'جزء بعد جزء' : 'الملف كاملًا' }}
+              </button>
+            </div>
+            <div v-if="asrMode === 'part'" class="flex flex-wrap items-end gap-2 text-xs">
+              <label class="flex flex-col gap-0.5">
+                <span class="text-slate-500">من</span>
+                <input v-model="partFrom" class="input w-20 px-2 py-1 text-xs tabular" dir="ltr" inputmode="numeric" placeholder="0:00" aria-label="بداية الجزء (دقائق:ثوانٍ)" />
+              </label>
+              <label class="flex flex-col gap-0.5">
+                <span class="text-slate-500">المدة</span>
+                <select v-model.number="partMinutes" class="input px-2 py-1 text-xs" aria-label="مدة الجزء">
+                  <option v-for="n in PART_CHOICES" :key="n" :value="n">{{ n === 1 ? 'دقيقة' : n === 2 ? 'دقيقتان' : `${n} دقائق` }}</option>
+                </select>
+              </label>
+              <span v-if="partRange" class="pb-1.5 text-slate-500 tabular">إلى {{ shortClock(partRange.end) }}</span>
+            </div>
+            <p v-if="asrMode === 'part' && suggestedStart === null && hasDraft" class="text-xs text-brand-700">فُرّغ الملف كله.</p>
+          </div>
+
           <div class="mt-2 flex flex-wrap gap-2">
-            <button class="btn-primary px-3 py-1.5 text-xs" :disabled="asrBusy || !transcript.asr.available" @click="transcribe">
-              {{ transcript.asr.stalled ? 'إعادة تشغيل التفريغ' : transcript.asr.status === 'done' ? 'إعادة التفريغ' : 'بدء التفريغ الآلي' }}
+            <button v-if="!asrBusy" class="btn-primary px-3 py-1.5 text-xs" :disabled="!transcript.asr.available" @click="transcribe">
+              {{
+                transcript.asr.stalled
+                  ? 'إعادة تشغيل التفريغ'
+                  : asrMode === 'part'
+                    ? (asrCovered.length ? 'تفريغ الجزء التالي' : 'تفريغ هذا الجزء')
+                    : transcript.asr.status === 'done' ? 'إعادة تفريغ الملف' : 'تفريغ الملف كاملًا'
+              }}
             </button>
-            <button v-if="hasDraft" class="btn-secondary px-3 py-1.5 text-xs" @click="offerDraft">إدراج المسودة</button>
+            <button v-if="hasDraft && !asrBusy" class="btn-secondary px-3 py-1.5 text-xs" @click="offerDraft()">إدراج المسودة</button>
+            <button
+              v-if="hasDraft && !asrBusy && transcript.asr.range"
+              class="btn-secondary px-3 py-1.5 text-xs"
+              :title="`فقرات الجزء ${shortClock(transcript.asr.range.start_ms)}–${shortClock(transcript.asr.range.end_ms)} فقط`"
+              @click="offerDraft('part')"
+            >
+              إدراج آخر جزء
+            </button>
+            <button v-if="hasDraft && !asrBusy" class="btn-ghost px-2 py-1.5 text-xs text-red-600 hover:bg-red-50" @click="deleteDraft">حذف المسودة</button>
           </div>
         </section>
 
@@ -1138,7 +1263,7 @@ onBeforeUnmount(() => {
           @find="openFind"
           @auto-correct="autoCorrect"
           @transcribe="transcribe"
-          @insert-draft="offerDraft"
+          @insert-draft="offerDraft()"
           @insert-time="insertTime"
           @shortcuts="shortcutsOpen = true"
           @update:zoom="setZoom"
@@ -1247,7 +1372,11 @@ onBeforeUnmount(() => {
     </AppModal>
 
     <AppModal :open="draftDialog" title="إدراج المسودة الآلية" @close="draftDialog = false">
-      <p class="mb-4 text-sm text-slate-600">في الصفحة نص مكتوب. كيف تريد إدراج المسودة الآلية ({{ asr?.paragraphs?.length ?? 0 }} فقرة)؟</p>
+      <p class="mb-4 text-sm text-slate-600">
+        في الصفحة نص مكتوب. كيف تريد إدراج
+        {{ draftScope === 'part' && asr?.range ? `الجزء ${shortClock(asr.range.start_ms)}–${shortClock(asr.range.end_ms)}` : 'المسودة الآلية' }}
+        ({{ draftParagraphs.length }} فقرة)؟
+      </p>
       <div class="flex flex-wrap justify-end gap-2">
         <button class="btn-secondary" @click="draftDialog = false">إلغاء</button>
         <button class="btn-secondary" @click="insertDraft('append')">إضافتها بعد النص الحالي</button>

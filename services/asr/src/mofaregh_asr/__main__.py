@@ -1,6 +1,7 @@
 """CLI the API's queue job runs:
 
     python -m mofaregh_asr AUDIO --out result.json [--model small] [--threads 2] [--beam-size 5] [--language ar]
+                                [--offset SECONDS] [--keep-before SECONDS]
 
 Prints ``STAGE <loading|transcribing>`` and ``PROGRESS <0..1>`` lines on stdout while it works (the
 first run downloads the model, which can take minutes before any progress), and writes
@@ -16,7 +17,7 @@ import json
 import os
 import sys
 
-from .paragraphs import drop_hallucinations, group_paragraphs
+from .paragraphs import clip_segments, drop_hallucinations, group_paragraphs
 
 # Nudges Whisper towards punctuated Modern Standard Arabic.
 INITIAL_PROMPT = "بسم الله الرحمن الرحيم. الحمد لله رب العالمين، والصلاة والسلام على رسول الله."
@@ -34,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="5 is the most accurate; 1-2 is several times faster on a one-core server")
     parser.add_argument("--unclear-below", type=float, default=0.5,
                         help="words with a lower probability are reported as unclear, with their times")
+    parser.add_argument("--offset", type=float, default=0.0,
+                        help="AUDIO is a clip starting this many seconds into the file: added to every time")
+    parser.add_argument("--keep-before", type=float, default=None,
+                        help="drop what starts after this many seconds of the clip (it runs on a little so no word is cut)")
     args = parser.parse_args(argv)
 
     print("STAGE loading", flush=True)
@@ -62,7 +67,8 @@ def main(argv: list[str] | None = None) -> int:
             "words": [{"start": w.start, "end": w.end, "word": w.word, "probability": w.probability}
                       for w in (seg.words or [])],
         })
-        done = min(1.0, seg.end / duration) if duration else 0.0
+        span = min(duration, args.keep_before) if args.keep_before else duration
+        done = min(1.0, seg.end / span) if span else 0.0
         if done - last >= 0.01:
             last = done
             print(f"PROGRESS {done:.3f}", flush=True)
@@ -71,7 +77,10 @@ def main(argv: list[str] | None = None) -> int:
         "language": info.language,
         "duration": duration,
         "model": args.model,
-        "paragraphs": group_paragraphs(drop_hallucinations(collected), unclear_below=args.unclear_below),
+        "paragraphs": group_paragraphs(
+            drop_hallucinations(clip_segments(collected, keep_before=args.keep_before, offset=args.offset)),
+            unclear_below=args.unclear_below,
+        ),
     }
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(result, fh, ensure_ascii=False)

@@ -10,6 +10,8 @@ enum AsrStatus: string
     case Running = 'running';
     case Done = 'done';
     case Failed = 'failed';
+    /** Stopped on request; whatever parts were finished before stay in the draft. */
+    case Cancelled = 'cancelled';
 
     public function isBusy(): bool
     {
