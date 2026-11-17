@@ -23,6 +23,7 @@ export const router = createRouter({
         { path: 'projects', name: 'projects', component: () => import('@/views/ProjectsView.vue'), meta: { title: 'المشاريع' } },
         { path: 'projects/:id(\\d+)', name: 'project', component: () => import('@/views/ProjectView.vue'), props: (r) => ({ id: Number(r.params.id) }), meta: { title: 'المشروع' } },
         { path: 'users', name: 'users', component: () => import('@/views/UsersView.vue'), meta: { roles: ['admin'], title: 'المستخدمون' } },
+        { path: 'dictionary', name: 'dictionary', component: () => import('@/views/DictionaryView.vue'), meta: { title: 'قاموس التدقيق' } },
         { path: 'account', name: 'account', component: () => import('@/views/AccountView.vue'), meta: { title: 'حسابي' } },
       ],
     },

@@ -5,7 +5,13 @@ import StarterKit from '@tiptap/starter-kit'
 import { EditorState } from '@tiptap/pm/state'
 import type { Transaction } from '@tiptap/pm/state'
 import { Node as PmNode } from '@tiptap/pm/model'
-import { TimedParagraph, Unclear, applyIssues, autoCorrectDocument, proofDocument } from '../extensions'
+import { TimedParagraph, Unclear, applyIssues, autoCorrectDocument, proofDocument as proof } from '../extensions'
+import { compileRules } from '@/lib/proofing'
+import type { ProofRule } from '@/lib/proofing'
+import seed from '../../../../../api/database/data/proofing-rules.json'
+
+const checker = compileRules((seed as Omit<ProofRule, 'enabled'>[]).map((r) => ({ ...r, enabled: true }) as ProofRule))
+const proofDocument = (doc: PmNode, ignored = new Set<string>()) => proof(doc, checker, ignored)
 
 const schema = getSchema([StarterKit.configure({ paragraph: false }), TimedParagraph, Unclear])
 

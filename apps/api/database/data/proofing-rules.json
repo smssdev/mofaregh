@@ -1,0 +1,752 @@
+[
+ {
+  "type": "word",
+  "pattern": "الى",
+  "replacement": "إلى",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اذا",
+  "replacement": "إذا",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "انما",
+  "replacement": "إنما",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اذ",
+  "replacement": "إذ",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ايضا",
+  "replacement": "أيضًا",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ايضاً",
+  "replacement": "أيضًا",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اكثر",
+  "replacement": "أكثر",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اقل",
+  "replacement": "أقل",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "احد",
+  "replacement": "أحد",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اول",
+  "replacement": "أول",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اولا",
+  "replacement": "أولًا",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اين",
+  "replacement": "أين",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ايها",
+  "replacement": "أيها",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "انت",
+  "replacement": "أنت",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "انتم",
+  "replacement": "أنتم",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "انا",
+  "replacement": "أنا",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اهل",
+  "replacement": "أهل",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اصحاب",
+  "replacement": "أصحاب",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اكبر",
+  "replacement": "أكبر",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ابو",
+  "replacement": "أبو",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اخي",
+  "replacement": "أخي",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اخوة",
+  "replacement": "إخوة",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اخواني",
+  "replacement": "إخواني",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اخوتي",
+  "replacement": "إخوتي",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ابراهيم",
+  "replacement": "إبراهيم",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اسماعيل",
+  "replacement": "إسماعيل",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اسحاق",
+  "replacement": "إسحاق",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ادم",
+  "replacement": "آدم",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اسلام",
+  "replacement": "إسلام",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ايمان",
+  "replacement": "إيمان",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "انسان",
+  "replacement": "إنسان",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "قران",
+  "replacement": "قرآن",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاه",
+  "replacement": "إله",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "إلاه",
+  "replacement": "إله",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاسلام",
+  "replacement": "الإسلام",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الايمان",
+  "replacement": "الإيمان",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الانسان",
+  "replacement": "الإنسان",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "القران",
+  "replacement": "القرآن",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاخرة",
+  "replacement": "الآخرة",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاخره",
+  "replacement": "الآخرة",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاسلامية",
+  "replacement": "الإسلامية",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاحسان",
+  "replacement": "الإحسان",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاخلاص",
+  "replacement": "الإخلاص",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الامام",
+  "replacement": "الإمام",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الانبياء",
+  "replacement": "الأنبياء",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاسلامي",
+  "replacement": "الإسلامي",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "حتي",
+  "replacement": "حتى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "متي",
+  "replacement": "متى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الذى",
+  "replacement": "الذي",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "التى",
+  "replacement": "التي",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "موسي",
+  "replacement": "موسى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "عيسي",
+  "replacement": "عيسى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "مصطفي",
+  "replacement": "مصطفى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "تعالي",
+  "replacement": "تعالى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاعلي",
+  "replacement": "الأعلى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "الاعلى",
+  "replacement": "الأعلى",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "مستشفي",
+  "replacement": "مستشفى",
+  "message": "الألف المقصورة",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "هاذا",
+  "replacement": "هذا",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "هاذه",
+  "replacement": "هذه",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "ذالك",
+  "replacement": "ذلك",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "هاكذا",
+  "replacement": "هكذا",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "لاكن",
+  "replacement": "لكن",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "لاكنه",
+  "replacement": "لكنه",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "لاكنها",
+  "replacement": "لكنها",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "لاكنّ",
+  "replacement": "لكنّ",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "هاؤلاء",
+  "replacement": "هؤلاء",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "هاولاء",
+  "replacement": "هؤلاء",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اولئك",
+  "replacement": "أولئك",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اولائك",
+  "replacement": "أولئك",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "أولائك",
+  "replacement": "أولئك",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "شيئ",
+  "replacement": "شيء",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "اللة",
+  "replacement": "الله",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": true
+ },
+ {
+  "type": "word",
+  "pattern": "انشالله",
+  "replacement": "إن شاء الله",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "word",
+  "pattern": "إنشالله",
+  "replacement": "إن شاء الله",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "word",
+  "pattern": "انشاالله",
+  "replacement": "إن شاء الله",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "word",
+  "pattern": "يايها",
+  "replacement": "يا أيها",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "word",
+  "pattern": "ياايها",
+  "replacement": "يا أيها",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "word",
+  "pattern": "يأيها",
+  "replacement": "يا أيها",
+  "message": "خطأ إملائي شائع",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "ان شاء الله",
+  "replacement": "إن شاء الله",
+  "message": "تُكتب «إن شاء الله» ثلاث كلمات بهمزة تحت الألف",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "إن شاءالله",
+  "replacement": "إن شاء الله",
+  "message": "تُكتب «إن شاء الله» ثلاث كلمات بهمزة تحت الألف",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "انشاء الله",
+  "replacement": "إن شاء الله",
+  "message": "تُكتب «إن شاء الله» ثلاث كلمات بهمزة تحت الألف",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "إنشاء الله",
+  "replacement": "إن شاء الله",
+  "message": "تُكتب «إن شاء الله» ثلاث كلمات بهمزة تحت الألف",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "انشاءالله",
+  "replacement": "إن شاء الله",
+  "message": "تُكتب «إن شاء الله» ثلاث كلمات بهمزة تحت الألف",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "إنشاءالله",
+  "replacement": "إن شاء الله",
+  "message": "تُكتب «إن شاء الله» ثلاث كلمات بهمزة تحت الألف",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "يا ايها",
+  "replacement": "يا أيها",
+  "message": "همزة القطع",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "phrase",
+  "pattern": "عز و جل",
+  "replacement": "عز وجل",
+  "message": "واو العطف تُكتب متصلة بما بعدها",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "builtin",
+  "pattern": "separated_waw",
+  "replacement": "",
+  "message": "واو العطف تُكتب متصلة بما بعدها",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "builtin",
+  "pattern": "repeated_word",
+  "replacement": "",
+  "message": "كلمة مكررة",
+  "kind": "grammar",
+  "prefixes": false,
+  "exceptions": [
+   "لا",
+   "كلا",
+   "الله",
+   "نعم",
+   "جدا",
+   "جدًا",
+   "سبحان",
+   "رويدا",
+   "شيئا",
+   "شيئًا",
+   "قليلا",
+   "قليلًا"
+  ]
+ },
+ {
+  "type": "builtin",
+  "pattern": "latin_punctuation",
+  "replacement": "",
+  "message": "علامة ترقيم عربية بعد النص العربي",
+  "kind": "punctuation",
+  "prefixes": false
+ },
+ {
+  "type": "builtin",
+  "pattern": "space_before_punctuation",
+  "replacement": "",
+  "message": "لا مسافة قبل علامة الترقيم",
+  "kind": "punctuation",
+  "prefixes": false
+ },
+ {
+  "type": "builtin",
+  "pattern": "tanween",
+  "replacement": "",
+  "message": "تنوين الفتح يُكتب على الحرف قبل الألف",
+  "kind": "spelling",
+  "prefixes": false
+ },
+ {
+  "type": "accept",
+  "pattern": "واحد",
+  "replacement": "",
+  "message": "كلمة صحيحة (و + احد)",
+  "kind": "spelling",
+  "prefixes": false
+ }
+]

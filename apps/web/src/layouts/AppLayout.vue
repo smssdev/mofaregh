@@ -14,6 +14,7 @@ watch(() => route.fullPath, () => (menuOpen.value = false))
 const links = computed(() => [
   { to: { name: 'projects' }, label: 'المشاريع', icon: 'M3 7h18M3 12h18M3 17h12', show: true },
   { to: { name: 'users' }, label: 'المستخدمون', icon: 'M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6m13 9v-1a4 4 0 0 0-3-3.87M16 4.13a3 3 0 0 1 0 5.74', show: auth.isAdmin },
+  { to: { name: 'dictionary' }, label: 'قاموس التدقيق', icon: 'M4 19.5V5a2 2 0 0 1 2-2h13v16H6.5A2.5 2.5 0 0 0 4 21.5zM4 19.5A2.5 2.5 0 0 1 6.5 17H19M9 7h6M9 11h4', show: true },
   { to: { name: 'account' }, label: 'حسابي', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8m-7 8a7 7 0 0 1 14 0', show: true },
 ])
 

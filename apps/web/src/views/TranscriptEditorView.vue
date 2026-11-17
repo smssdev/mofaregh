@@ -24,6 +24,9 @@ import { correctText } from '@/lib/autocorrect'
 import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, actionFor, comboOf, formatClock, isAllowedCombo, loadShortcuts, saveShortcuts } from '@/lib/shortcuts'
 import type { ShortcutAction } from '@/lib/shortcuts'
 import AppModal from '@/components/AppModal.vue'
+import RuleForm from '@/components/RuleForm.vue'
+import { useProofingStore } from '@/stores/proofing'
+import type { ProofRule } from '@/lib/proofing'
 import EditorRibbon from '@/components/editor/EditorRibbon.vue'
 import MediaPlayer from '@/components/editor/MediaPlayer.vue'
 import {
@@ -46,7 +49,7 @@ import {
   unclearAt,
   unclearRanges,
 } from '@/components/editor/extensions'
-import type { DocIssue } from '@/components/editor/extensions'
+import type { DocIssue, ProofingStorage } from '@/components/editor/extensions'
 import { KIND_LABEL } from '@/lib/proofing'
 
 const props = defineProps<{ id: number }>()
@@ -149,13 +152,82 @@ const proofingOn = ref(localStorage.getItem('mofaregh.proofing') !== 'off')
 const ignoredTexts = new Set<string>()
 const MAX_LISTED = 60
 
+const dictionary = useProofingStore()
+
 function refreshIssues(): void {
   const doc = editor.value?.state.doc
-  issues.value = doc ? proofDocument(doc, ignoredTexts) : []
+  issues.value = doc ? proofDocument(doc, dictionary.checker, ignoredTexts) : []
 }
 
-function proofingStorage(): { enabled: boolean; ignored: Set<string> } | null {
-  return editor.value ? (editor.value.storage as unknown as { proofing: { enabled: boolean; ignored: Set<string> } }).proofing : null
+function proofingStorage(): ProofingStorage | null {
+  return editor.value ? (editor.value.storage as unknown as { proofing: ProofingStorage }).proofing : null
+}
+
+/** A rule added or changed (here or on the dictionary page in this tab) re-checks the text at once. */
+watch(
+  () => dictionary.checker,
+  (checker) => {
+    const storage = proofingStorage()
+    if (!storage || !editor.value) return
+    storage.checker = checker
+    refreshProofing(editor.value)
+    refreshIssues()
+  },
+)
+
+async function loadDictionary(): Promise<void> {
+  try {
+    await dictionary.load(true)
+  } catch {
+    notice.value = 'تعذّر تحميل قاموس التدقيق؛ التدقيق الإملائي متوقف حتى تُحدَّث الصفحة.'
+  }
+}
+
+// "Add as a common mistake" / "always accept", for those who may edit the dictionary.
+const ruleDialog = ref(false)
+const ruleInitial = ref<Partial<ProofRule>>({})
+const ruleSample = ref('')
+const ruleKey = ref(0)
+
+function openRuleDialog(initial: Partial<ProofRule>, sample: string): void {
+  ruleInitial.value = initial
+  ruleSample.value = sample
+  ruleKey.value++
+  ruleDialog.value = true
+}
+
+/** From the selection (or the word at the cursor): a new word or phrase rule, tested on its paragraph. */
+function addMistakeFromSelection(): void {
+  const instance = editor.value
+  if (!instance) return
+  const { state } = instance
+  let { from, to } = state.selection
+  const $from = state.doc.resolve(from)
+  const paragraph = $from.parent.textContent
+  if (from === to) {
+    // The word around the cursor.
+    const offset = $from.parentOffset
+    const left = paragraph.slice(0, offset).match(/[^\s،؛؟.!:]+$/)?.[0] ?? ''
+    const right = paragraph.slice(offset).match(/^[^\s،؛؟.!:]+/)?.[0] ?? ''
+    from -= left.length
+    to += right.length
+  }
+  const text = state.doc.textBetween(from, to, ' ').trim()
+  openRuleDialog({ type: /\s/.test(text) ? 'phrase' : 'word', pattern: text, replacement: '', prefixes: !/\s/.test(text) }, paragraph)
+}
+
+async function acceptAlways(issue: DocIssue): Promise<void> {
+  try {
+    await dictionary.save({ type: 'accept', pattern: issue.text.trim(), message: '', kind: issue.kind, prefixes: false, enabled: true })
+    notice.value = `أُضيف «${issue.text.trim()}» إلى المقبول دائمًا في القاموس.`
+  } catch (e) {
+    notice.value = errorMessage(e)
+  }
+}
+
+function onRuleSaved(rule: ProofRule): void {
+  ruleDialog.value = false
+  notice.value = `أُضيفت «${rule.pattern}» إلى القاموس، وأُعيد التدقيق.`
 }
 
 function setProofing(on: boolean): void {
@@ -339,6 +411,7 @@ async function load(): Promise<void> {
     if (transcriptResponse.data.content) editor.value?.commands.setContent(transcriptResponse.data.content, { emitUpdate: false })
     refreshUnclear()
     if (!proofingOn.value) setProofing(false)
+    await loadDictionary()
     refreshIssues()
     ready = true
     if (transcriptResponse.data.asr.status === 'queued' || transcriptResponse.data.asr.status === 'running') startPolling()
@@ -744,6 +817,10 @@ onBeforeUnmount(() => {
             <h2 id="proof-title" class="text-sm font-semibold">التدقيق الإملائي والنحوي <span class="tabular text-slate-500">({{ issues.length }})</span></h2>
             <button class="btn-secondary px-2 py-1 text-xs" :disabled="issues.length === 0" title="يطبّق كل الاقتراحات دفعة واحدة (Ctrl+Z يتراجع)" @click="fixAllIssues">تصحيح الكل</button>
           </div>
+          <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <button v-if="dictionary.canEdit" class="text-brand-700 hover:underline" title="يضيف الكلمة المحددة (أو التي عند المؤشر) إلى القاموس مع تصحيحها" @click="addMistakeFromSelection">+ إضافة خطأ شائع</button>
+            <RouterLink :to="{ name: 'dictionary' }" target="_blank" class="text-slate-500 hover:underline">القاموس ({{ dictionary.rules.length }})</RouterLink>
+          </div>
           <label class="mb-2 flex items-center gap-2 text-xs text-slate-600">
             <input type="checkbox" class="size-4 accent-brand-700" :checked="proofingOn" @change="setProofing(($event.target as HTMLInputElement).checked)" />
             تسطير الملاحظات في النص
@@ -760,7 +837,8 @@ onBeforeUnmount(() => {
               <div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
                 <span class="truncate">{{ issue.message }}</span>
                 <button class="ms-auto shrink-0 text-brand-700 hover:underline" @click="fixIssue(issue)">تصحيح</button>
-                <button class="shrink-0 hover:underline" @click="ignoreIssue(issue)">تجاهل</button>
+                <button class="shrink-0 hover:underline" title="في هذه الجلسة فقط" @click="ignoreIssue(issue)">تجاهل</button>
+                <button v-if="dictionary.canEdit && issue.kind !== 'punctuation'" class="shrink-0 hover:underline" title="يضيفه إلى «المقبول دائمًا» في القاموس لكل الملفات" @click="acceptAlways(issue)">صحيح دائمًا</button>
               </div>
             </li>
             <li v-if="issues.length > MAX_LISTED" class="px-2 text-xs text-slate-500">و{{ issues.length - MAX_LISTED }} ملاحظة أخرى؛ صحّح ما سبق لتظهر.</li>
@@ -949,6 +1027,10 @@ onBeforeUnmount(() => {
         </footer>
       </section>
     </div>
+
+    <AppModal :open="ruleDialog" title="إضافة إلى قاموس التدقيق" @close="ruleDialog = false">
+      <RuleForm v-if="ruleDialog" :key="ruleKey" :initial="ruleInitial" :sample="ruleSample" @saved="onRuleSaved" @cancel="ruleDialog = false" />
+    </AppModal>
 
     <AppModal :open="draftDialog" title="إدراج المسودة الآلية" @close="draftDialog = false">
       <p class="mb-4 text-sm text-slate-600">في الصفحة نص مكتوب. كيف تريد إدراج المسودة الآلية ({{ asr?.paragraphs?.length ?? 0 }} فقرة)؟</p>

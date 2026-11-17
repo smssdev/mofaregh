@@ -10,8 +10,8 @@ import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { ALL_CORRECTIONS, FORMULAS, correctText, endsInsideQuote, stripTashkeel } from '@/lib/autocorrect'
 import type { CorrectOptions } from '@/lib/autocorrect'
-import { checkText } from '@/lib/proofing'
-import type { Issue } from '@/lib/proofing'
+import { checkText, compileRules } from '@/lib/proofing'
+import type { Checker, Issue } from '@/lib/proofing'
 import { diffText } from '@/lib/textdiff'
 import { formatClock } from '@/lib/shortcuts'
 
@@ -253,23 +253,28 @@ export interface DocIssue extends Issue {
 }
 
 const proofingKey = new PluginKey<DecorationSet>('proofing')
-const checked = new Map<string, Issue[]>() // paragraph text -> its issues: typing re-checks one paragraph only
+/** Until the dictionary has loaded nothing is checked. */
+const EMPTY_CHECKER = compileRules([])
+// Per dictionary: paragraph text -> its issues, so typing re-checks one paragraph only.
+const checked = new WeakMap<Checker, Map<string, Issue[]>>()
 
-function cachedCheck(text: string): Issue[] {
-  let issues = checked.get(text)
+function cachedCheck(text: string, checker: Checker): Issue[] {
+  let cache = checked.get(checker)
+  if (!cache) checked.set(checker, (cache = new Map()))
+  let issues = cache.get(text)
   if (!issues) {
-    if (checked.size > 5000) checked.clear()
-    issues = checkText(text)
-    checked.set(text, issues)
+    if (cache.size > 5000) cache.clear()
+    issues = checkText(text, checker)
+    cache.set(text, issues)
   }
   return issues
 }
 
 /** The spelling, grammar and punctuation issues of the document, in order, without the ignored ones. */
-export function proofDocument(doc: PmNode, ignored: ReadonlySet<string> = new Set()): DocIssue[] {
+export function proofDocument(doc: PmNode, checker: Checker, ignored: ReadonlySet<string> = new Set()): DocIssue[] {
   const issues: DocIssue[] = []
   for (const block of textBlocks(doc)) {
-    for (const issue of cachedCheck(block.text)) {
+    for (const issue of cachedCheck(block.text, checker)) {
       if (ignored.has(issue.text)) continue
       issues.push({ ...issue, pos: block.start + issue.from, end: block.start + issue.to })
     }
@@ -277,11 +282,19 @@ export function proofDocument(doc: PmNode, ignored: ReadonlySet<string> = new Se
   return issues
 }
 
-/** Underlines what proofDocument finds. storage.enabled hides it; storage.ignored holds the texts to leave alone. */
-export const Proofing = Extension.create<object, { enabled: boolean; ignored: Set<string> }>({
+export interface ProofingStorage {
+  enabled: boolean
+  /** Texts ignored in this session only. */
+  ignored: Set<string>
+  /** The compiled dictionary (setProofingRules). */
+  checker: Checker
+}
+
+/** Underlines what proofDocument finds with the dictionary in storage.checker. */
+export const Proofing = Extension.create<object, ProofingStorage>({
   name: 'proofing',
   addStorage() {
-    return { enabled: true, ignored: new Set<string>() }
+    return { enabled: true, ignored: new Set<string>(), checker: EMPTY_CHECKER }
   },
   addProseMirrorPlugins() {
     const storage = this.storage
@@ -289,7 +302,7 @@ export const Proofing = Extension.create<object, { enabled: boolean; ignored: Se
       storage.enabled
         ? DecorationSet.create(
             doc,
-            proofDocument(doc, storage.ignored).map((issue) =>
+            proofDocument(doc, storage.checker, storage.ignored).map((issue) =>
               Decoration.inline(issue.pos, issue.end, {
                 class: `proof proof-${issue.kind}`,
                 title: `${issue.message}: ${issue.suggestion.trim() === '' ? 'احذف المسافة' : `«${issue.suggestion}»`}`,
