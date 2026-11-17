@@ -8,8 +8,11 @@ import Paragraph from '@tiptap/extension-paragraph'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { ALL_CORRECTIONS, FORMULAS, correctText, stripTashkeel } from '@/lib/autocorrect'
+import { ALL_CORRECTIONS, FORMULAS, correctText, endsInsideQuote, stripTashkeel } from '@/lib/autocorrect'
 import type { CorrectOptions } from '@/lib/autocorrect'
+import { checkText } from '@/lib/proofing'
+import type { Issue } from '@/lib/proofing'
+import { diffText } from '@/lib/textdiff'
 import { formatClock } from '@/lib/shortcuts'
 
 /**
@@ -190,6 +193,8 @@ export const FormulaRules = Extension.create<object, { enabled: boolean }>({
           find: new RegExp(`(${plain})([\\s،.؛:؟!])$`),
           handler: ({ state, range, match }) => {
             if (!storage.enabled) return null
+            const $from = state.doc.resolve(range.from)
+            if (endsInsideQuote($from.parent.textBetween(0, $from.parentOffset, undefined, LEAF))) return null
             state.tr.insertText(vowelled + (match[2] ?? ' '), range.from, range.to)
           },
         })
@@ -197,24 +202,132 @@ export const FormulaRules = Extension.create<object, { enabled: boolean }>({
   },
 })
 
-/** Corrects every text run of the document in one undoable step. Returns how many runs changed. */
+/** One character per inline leaf (hard break, image…), so string offsets line up with document positions. */
+const LEAF = '￼'
+
+/** Every text block that holds ordinary text (not code), with its text and the position its content starts at. */
+function textBlocks(doc: PmNode): { start: number; text: string }[] {
+  const blocks: { start: number; text: string }[] = []
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true
+    if (!node.type.spec.code) blocks.push({ start: pos + 1, text: node.textBetween(0, node.content.size, undefined, LEAF) })
+    return false
+  })
+  return blocks
+}
+
+/**
+ * Corrects the whole document in one undoable step and returns how many spots changed. Each paragraph is
+ * corrected as one text, so a formula or a comma split by a mark (a word flagged unclear, bold…) is still found
+ * and quoted scripture is recognised across runs; only the characters that change are rewritten, so every
+ * other character keeps its marks.
+ */
 export function autoCorrectDocument(editor: Editor, options: CorrectOptions = ALL_CORRECTIONS): number {
   const { state, view } = editor
-  const changes: { from: number; to: number; text: string; node: PmNode }[] = []
-  state.doc.descendants((node, pos) => {
-    if (!node.isText || !node.text) return
-    const fixed = correctText(node.text, options)
-    if (fixed !== node.text) changes.push({ from: pos, to: pos + node.nodeSize, text: fixed, node })
-  })
-  if (changes.length === 0) return 0
+  const edits: { from: number; to: number; insert: string }[] = []
+  for (const block of textBlocks(state.doc)) {
+    const fixed = correctText(block.text, options)
+    if (fixed === block.text) continue
+    for (const e of diffText(block.text, fixed)) edits.push({ from: block.start + e.from, to: block.start + e.to, insert: e.insert })
+  }
+  if (edits.length === 0) return 0
 
   const tr = state.tr
-  for (const change of changes.reverse()) {
-    if (change.text === '') tr.delete(change.from, change.to)
-    else tr.replaceWith(change.from, change.to, state.schema.text(change.text, change.node.marks))
+  for (const e of edits.reverse()) {
+    const before = e.from === e.to ? tr.doc.nodeAt(e.from - 1) : null
+    if (e.insert === '') tr.delete(e.from, e.to)
+    // Harakat belong to the letter before them: they take its marks even where a mark ends (an unclear word).
+    else if (before?.isText && stripTashkeel(e.insert) === '') tr.insert(e.from, state.schema.text(e.insert, before.marks))
+    else tr.insertText(e.insert, e.from, e.to)
   }
   view.dispatch(tr)
-  return changes.length
+  return edits.length
+}
+
+// --- proofing -------------------------------------------------------------------------------------------------
+
+export interface DocIssue extends Issue {
+  /** Document positions (Issue.from/to are offsets in the paragraph). */
+  pos: number
+  end: number
+}
+
+const proofingKey = new PluginKey<DecorationSet>('proofing')
+const checked = new Map<string, Issue[]>() // paragraph text -> its issues: typing re-checks one paragraph only
+
+function cachedCheck(text: string): Issue[] {
+  let issues = checked.get(text)
+  if (!issues) {
+    if (checked.size > 5000) checked.clear()
+    issues = checkText(text)
+    checked.set(text, issues)
+  }
+  return issues
+}
+
+/** The spelling, grammar and punctuation issues of the document, in order, without the ignored ones. */
+export function proofDocument(doc: PmNode, ignored: ReadonlySet<string> = new Set()): DocIssue[] {
+  const issues: DocIssue[] = []
+  for (const block of textBlocks(doc)) {
+    for (const issue of cachedCheck(block.text)) {
+      if (ignored.has(issue.text)) continue
+      issues.push({ ...issue, pos: block.start + issue.from, end: block.start + issue.to })
+    }
+  }
+  return issues
+}
+
+/** Underlines what proofDocument finds. storage.enabled hides it; storage.ignored holds the texts to leave alone. */
+export const Proofing = Extension.create<object, { enabled: boolean; ignored: Set<string> }>({
+  name: 'proofing',
+  addStorage() {
+    return { enabled: true, ignored: new Set<string>() }
+  },
+  addProseMirrorPlugins() {
+    const storage = this.storage
+    const build = (doc: PmNode) =>
+      storage.enabled
+        ? DecorationSet.create(
+            doc,
+            proofDocument(doc, storage.ignored).map((issue) =>
+              Decoration.inline(issue.pos, issue.end, {
+                class: `proof proof-${issue.kind}`,
+                title: `${issue.message}: ${issue.suggestion.trim() === '' ? 'احذف المسافة' : `«${issue.suggestion}»`}`,
+              }),
+            ),
+          )
+        : DecorationSet.empty
+    return [
+      new Plugin<DecorationSet>({
+        key: proofingKey,
+        state: {
+          init: (_config, state) => build(state.doc),
+          apply: (tr, old) => (tr.docChanged || tr.getMeta(proofingKey) ? build(tr.doc) : old),
+        },
+        props: { decorations: (state) => proofingKey.getState(state) },
+      }),
+    ]
+  },
+})
+
+/** Re-draws the underlines after the ignore list or the on/off switch changed. */
+export function refreshProofing(editor: Editor): void {
+  editor.view.dispatch(editor.state.tr.setMeta(proofingKey, true).setMeta('addToHistory', false))
+}
+
+/** Applies the suggestion of each issue still found where it was, in one undoable step. Returns how many. */
+export function applyIssues(editor: Editor, issues: readonly DocIssue[]): number {
+  const { state, view } = editor
+  const tr = state.tr
+  let applied = 0
+  for (const issue of [...issues].sort((a, b) => b.pos - a.pos)) {
+    if (issue.end > state.doc.content.size || state.doc.textBetween(issue.pos, issue.end, undefined, LEAF) !== issue.text) continue
+    if (issue.suggestion === '') tr.delete(issue.pos, issue.end)
+    else tr.insertText(issue.suggestion, issue.pos, issue.end)
+    applied++
+  }
+  if (applied > 0) view.dispatch(tr)
+  return applied
 }
 
 export interface Match {

@@ -19,9 +19,9 @@ export const FORMULAS: readonly string[] = [
 ]
 
 // Harakat, Quranic annotation marks and the superscript alef (as in arabic/diacritics.py), without tatweel.
-const MARK_CLASS = 'ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۨ-ۭ'
+export const MARK_CLASS = 'ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۨ-ۭ'
 const MARKS = new RegExp(`[${MARK_CLASS}]`, 'g')
-const ARABIC_LETTER = 'ء-ي'
+export const ARABIC_LETTER = 'ء-ي'
 
 export function stripTashkeel(text: string): string {
   return text.replace(MARKS, '')
@@ -42,13 +42,42 @@ const COMPILED: readonly { pattern: RegExp; vowelled: string }[] = [...FORMULAS]
     return { pattern: new RegExp(`${body}(?![${ARABIC_LETTER}${MARK_CLASS}])`, 'g'), vowelled }
   })
 
-const QUOTED = /(﴿[^﴾]*﴾|«[^»]*»)/
+const CLOSER: Record<string, string> = { '﴿': '﴾', '«': '»' }
+
+/**
+ * Splits `text` into the parts outside and inside ﴿…﴾ and «…». An opener with no closer protects the rest of
+ * the text: scripture is never corrected, even when its closing bracket is missing or in another run.
+ */
+export function splitQuoted(text: string): { text: string; quoted: boolean }[] {
+  const parts: { text: string; quoted: boolean }[] = []
+  let start = 0
+  let closer: string | null = null
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i] as string
+    if (closer === null && CLOSER[ch]) {
+      if (i > start) parts.push({ text: text.slice(start, i), quoted: false })
+      start = i
+      closer = CLOSER[ch] as string
+    } else if (closer !== null && ch === closer) {
+      parts.push({ text: text.slice(start, i + 1), quoted: true })
+      start = i + 1
+      closer = null
+    }
+  }
+  if (start < text.length) parts.push({ text: text.slice(start), quoted: closer !== null })
+  return parts
+}
+
+/** True when the end of `text` is inside an opened ﴿ or « (typing there is quoting scripture). */
+export function endsInsideQuote(text: string): boolean {
+  const last = splitQuoted(text).at(-1)
+  return !!last && last.quoted && last.text.at(-1) !== CLOSER[last.text[0] as string]
+}
 
 /** Applies `fix` to the parts of `text` that are outside ﴿…﴾ and «…». */
 function outsideQuotes(text: string, fix: (plain: string) => string): string {
-  return text
-    .split(QUOTED)
-    .map((part, index) => (index % 2 === 0 ? fix(part) : part))
+  return splitQuoted(text)
+    .map((part) => (part.quoted ? part.text : fix(part.text)))
     .join('')
 }
 
