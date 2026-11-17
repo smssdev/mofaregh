@@ -2,9 +2,54 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 
 SENTENCE_END = (".", "؟", "!", "…", "؛")
+
+# Lines Whisper is known to invent for Arabic audio over silence, music or noise (credits and channel outros from
+# its training subtitles). A segment that is nothing but one of these is dropped.
+KNOWN_HALLUCINATIONS = (
+    "ترجمة نانسي قنقر",
+    "اشتركوا في القناة",
+    "اشترك في القناة",
+    "لا تنسوا الاشتراك في القناة",
+    "شكرا للمشاهدة",
+    "شكرا على المشاهدة",
+    "شكراً للمشاهدة",
+    "شكراً على المشاهدة",
+    "المترجم للقناة",
+    "نانسي قنقر",
+)
+
+_PUNCT = re.compile(r"[\s.,،؛;:!?؟…\-ـ\"'«»()]+")
+_TASHKEEL = re.compile(r"[ً-ْٰ]")  # harakat, tanween, shadda, sukun, dagger alif
+
+
+def _key(text: str) -> str:
+    """Text without diacritics, punctuation and spacing: what two segments are compared on."""
+    return _PUNCT.sub("", _TASHKEEL.sub("", str(text)))
+
+
+_HALLUCINATION_KEYS = {_key(h) for h in KNOWN_HALLUCINATIONS}
+
+
+def drop_hallucinations(segments: Iterable[Mapping], *, max_repeats: int = 2) -> list[Mapping]:
+    """Removes what Whisper invents rather than hears: segments that are only a known outro line, and a loop
+    where the same segment comes back again and again (more than ``max_repeats`` in a row is a loop, a speaker
+    repeating a phrase twice is not)."""
+    kept: list[Mapping] = []
+    previous, run = None, 0
+    for seg in segments:
+        key = _key(seg.get("text", ""))
+        if not key or key in _HALLUCINATION_KEYS:
+            continue
+        run = run + 1 if key == previous else 1
+        previous = key
+        if run > max_repeats:
+            continue
+        kept.append(seg)
+    return kept
 
 
 def group_paragraphs(

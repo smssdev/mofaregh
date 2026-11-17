@@ -46,6 +46,17 @@ setup_python() {
 
     if "$VENV/bin/pip" install --quiet "$RELEASE/python/asr"         && "$VENV/bin/pip" install --quiet --force-reinstall --no-deps "$RELEASE/python/asr"         && "$VENV/bin/python" -c "import faster_whisper, mofaregh_asr"; then
         echo "python: ASR ready (model is downloaded on the first transcription)"
+        # Whisper models live beside the virtualenv, in a folder this user creates and therefore can write.
+        # Models a previous release already downloaded into ~/.cache are copied over instead of downloaded again.
+        MODELS="$APP_DIR/shared/asr-models"
+        if mkdir -p "$MODELS/hub" && [ -w "$MODELS" ]; then
+            grep -q '^ASR_MODEL_DIR=' "$APP_DIR/shared/.env" || echo "ASR_MODEL_DIR=$MODELS" >> "$APP_DIR/shared/.env"
+            for cached in "$HOME"/.cache/huggingface/hub/models--Systran--faster-whisper-*; do
+                [ -d "$cached" ] && [ ! -e "$MODELS/hub/$(basename "$cached")" ] && cp -a "$cached" "$MODELS/hub/" || true
+            done
+        else
+            echo "WARN python: cannot write $MODELS; Whisper models stay in ~/.cache/huggingface."
+        fi
     else
         echo "WARN python: ASR (faster-whisper) did not install; automatic drafts will fail until it does."
     fi

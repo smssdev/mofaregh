@@ -39,8 +39,9 @@ class AsrCheck extends Command
         }
 
         $usable = $transcriber instanceof WhisperTranscriber ? $transcriber->usableModelDir() : config('mofaregh.asr.model_dir');
-        $this->line('asr: model '.config('mofaregh.asr.model').', '.config('mofaregh.asr.threads').' threads, dir '
-            .($usable === null ? 'NOT WRITABLE ('.config('mofaregh.asr.model_dir').'), falling back to ~/.cache/huggingface' : $this->modelDirSummary()));
+        $why = $transcriber instanceof WhisperTranscriber ? $transcriber->modelDirProblem() : null;
+        $this->line('asr: model '.config('mofaregh.asr.model').', '.config('mofaregh.asr.threads').' threads, beam '.config('mofaregh.asr.beam_size').', dir '
+            .($usable === null ? 'NOT WRITABLE ('.config('mofaregh.asr.model_dir').': '.($why ?? '?').'), falling back to ~/.cache/huggingface' : $this->modelDirSummary()));
         $this->line('asr: server '.$this->serverSummary());
         $this->line('asr: scheduler '.$this->schedulerSummary());
         $this->queueSummary();

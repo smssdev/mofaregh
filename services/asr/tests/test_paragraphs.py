@@ -43,3 +43,20 @@ def test_unsure_words_are_reported_with_exact_times_and_offsets():
     ]
     for u in para["unclear"]:
         assert para["text"][u["offset"]:u["offset"] + len(u["text"])] == u["text"]
+
+
+def test_known_outro_lines_and_loops_are_dropped():
+    from mofaregh_asr.paragraphs import drop_hallucinations
+
+    segs = [
+        {"start": 0, "end": 2, "text": "الحمد لله رب العالمين"},
+        {"start": 2, "end": 3, "text": " ترجمة نانسي قنقر"},
+        {"start": 3, "end": 4, "text": "سبحان الله"},
+        {"start": 4, "end": 5, "text": "سُبحانَ اللهِ."},
+        {"start": 5, "end": 6, "text": "سبحان الله"},
+        {"start": 6, "end": 7, "text": "سبحان الله"},
+        {"start": 7, "end": 8, "text": "اشتركوا في القناة!"},
+        {"start": 8, "end": 9, "text": "والصلاة والسلام على رسول الله"},
+    ]
+    kept = [s["text"] for s in drop_hallucinations(segs)]
+    assert kept == ["الحمد لله رب العالمين", "سبحان الله", "سُبحانَ اللهِ.", "والصلاة والسلام على رسول الله"]

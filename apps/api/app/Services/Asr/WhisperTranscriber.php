@@ -21,6 +21,7 @@ class WhisperTranscriber implements Transcriber
         private readonly int $timeout,
         /** Where models are downloaded and kept (shared storage, so every release reuses them). */
         private readonly ?string $modelDir = null,
+        private readonly int $beamSize = 5,
     ) {}
 
     public function isAvailable(): bool
@@ -53,6 +54,7 @@ class WhisperTranscriber implements Transcriber
         $process = new Process([
             $this->python, '-m', 'mofaregh_asr', $audioPath,
             '--out', $out, '--model', $model ?? $this->model, '--threads', (string) $this->threads,
+            '--beam-size', (string) max(1, $this->beamSize),
         ], env: $env, timeout: $this->timeout);
 
         try {
@@ -112,9 +114,29 @@ class WhisperTranscriber implements Transcriber
         if (is_dir($this->modelDir) && is_writable($this->modelDir)) {
             return $this->modelDir;
         }
-        Log::warning('asr: model folder is not writable, using the default cache', ['dir' => $this->modelDir]);
+        Log::warning('asr: model folder is not writable, using the default cache', ['dir' => $this->modelDir, 'why' => $this->modelDirProblem()]);
 
         return null;
+    }
+
+    /** Why the model folder cannot be used, for the health check: the first missing or read-only folder on its path. */
+    public function modelDirProblem(): ?string
+    {
+        if (! $this->modelDir) {
+            return 'ASR_MODEL_DIR is empty';
+        }
+        $dir = $this->modelDir;
+        while (! is_dir($dir) && dirname($dir) !== $dir) {
+            $dir = dirname($dir);
+        }
+        if (is_dir($this->modelDir) && is_writable($this->modelDir)) {
+            return null;
+        }
+        $owner = function_exists('posix_getpwuid') ? (posix_getpwuid((int) @fileowner($dir))['name'] ?? '?') : (string) @fileowner($dir);
+        $me = function_exists('posix_geteuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? '?') : get_current_user();
+        $mode = substr(sprintf('%o', (int) @fileperms($dir)), -4);
+
+        return ($dir === $this->modelDir ? 'not writable' : "cannot create it inside {$dir}")." (owner {$owner}, mode {$mode}, running as {$me})";
     }
 
     /** One Arabic sentence for the editor, with the engine's own last error line for whoever reads the logs. */

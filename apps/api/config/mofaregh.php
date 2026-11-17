@@ -32,10 +32,13 @@ return [
         'model' => env('ASR_MODEL', 'small'),
         // CPU threads Whisper may use. The VPS is shared with other sites: keep this below the core count.
         'threads' => (int) env('ASR_THREADS', 2),
+        // Beam search width: 5 is the most accurate; 2 is about twice as fast with a small loss, worth it when a
+        // long lecture on one core would otherwise run past ASR_TIMEOUT.
+        'beam_size' => (int) env('ASR_BEAM_SIZE', 5),
         // Seconds one file may take (default 6 hours: a long lecture on two threads).
         'timeout' => (int) env('ASR_TIMEOUT', 6 * 3600),
-        // Where Whisper models are downloaded (shared storage, so releases reuse them; medium is about 1.5 GB).
-        // storage/app/private is the local disk root, which the site user can always write (uploads land there).
+        // Where Whisper models are downloaded, so every release reuses them (medium is about 1.5 GB). On the server
+        // deploy/activate.sh creates shared/asr-models and writes ASR_MODEL_DIR into shared/.env.
         'model_dir' => env('ASR_MODEL_DIR', storage_path('app/private/asr-models')),
         // A running draft with no progress for this long is treated as dead and may be restarted. The first run
         // downloads the model before any progress, hence the margin.
