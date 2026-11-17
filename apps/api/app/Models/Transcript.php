@@ -6,6 +6,7 @@ use App\Enums\AsrStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * The text of one audio file: the editor's document plus the state of its automatic draft.
@@ -64,5 +65,10 @@ class Transcript extends Model
     public function editor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function versions(): HasMany
+    {
+        return $this->hasMany(TranscriptVersion::class);
     }
 }

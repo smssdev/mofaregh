@@ -48,10 +48,15 @@ migrates, caches and switches the `current` symlink in one step. It can also be 
 | Logs | `shared/storage/logs/` and `/home/mofaregh/logs/` (nginx, PHP) |
 | Queue stuck? | `cd current && php artisan queue:work --stop-when-empty` to drain by hand; failed jobs: `php artisan queue:failed` |
 | Roll back | `ln -sfn …/releases/<older> …/current && sudo systemctl reload php8.4-fpm` (migrations are not undone) |
-| Back up | `shared/database.sqlite` and `shared/storage/app/audio/` |
+| Back up | Automatic: `mofaregh:backup` every night at 03:15 and before every deploy's migrations writes `shared/backups/db-<time>-<reason>.sqlite.gz` (14 days kept, never fewer than 3). By hand: `cd current && php artisan mofaregh:backup --reason=manual` |
+| Restore the database | `gunzip -c shared/backups/db-….sqlite.gz > shared/database.sqlite.new && mv shared/database.sqlite.new shared/database.sqlite` |
 | Reset an admin password | `php artisan mofaregh:create-admin <email> --reset` |
 
 ## Limits to know
+
+- Backups sit on the same VPS as the site: they protect against a bad migration, a deleted record or a corrupted
+  file, not against losing the server. For that, set `BACKUP_DIR` (and `BACKUP_AUDIO_DIR` for the audio, which is
+  not copied otherwise) to a second disk or a synced off-server folder in `shared/.env`.
 
 - Audio sits on the VPS disk (about 15 GB free at setup). Move `AUDIO_DISK` to S3-compatible storage before real
   volumes arrive.

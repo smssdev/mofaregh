@@ -63,6 +63,10 @@ setup_python() {
 }
 setup_python || echo "WARN python: setup failed, continuing."
 
+# A snapshot of the database before any migration touches it (shared/backups, kept 14 days).
+grep -q '^BACKUP_DIR=' "$APP_DIR/shared/.env" || echo "BACKUP_DIR=$APP_DIR/shared/backups" >> "$APP_DIR/shared/.env"
+BACKUP_DIR="$APP_DIR/shared/backups" php artisan mofaregh:backup --reason=pre-deploy || echo "WARN backup: pre-deploy snapshot failed."
+
 php artisan migrate --force --no-interaction
 php artisan optimize
 

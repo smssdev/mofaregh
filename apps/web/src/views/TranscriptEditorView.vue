@@ -19,7 +19,9 @@ import Superscript from '@tiptap/extension-superscript'
 import { TableKit } from '@tiptap/extension-table'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import { errorMessage, http } from '@/api/http'
-import type { AsrParagraph, AudioFile, EditorNode, Transcript } from '@/api/types'
+import type { AsrParagraph, AudioFile, EditorDoc, EditorNode, Transcript, TranscriptVersionDetail, TranscriptVersionSummary } from '@/api/types'
+import { clearLocalDraft, draftDecision, readLocalDraft, writeLocalDraft } from '@/lib/localDraft'
+import type { LocalDraft } from '@/lib/localDraft'
 import { correctText } from '@/lib/autocorrect'
 import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, actionFor, comboOf, formatClock, isAllowedCombo, loadShortcuts, saveShortcuts } from '@/lib/shortcuts'
 import type { ShortcutAction } from '@/lib/shortcuts'
@@ -339,18 +341,31 @@ let version = 0
 let saveTimer: number | undefined
 let changedWhileSaving = false
 
-const saveLabel = computed(
-  () =>
-    ({
-      saved: 'حُفظ',
-      dirty: 'تغييرات لم تُحفظ بعد',
-      saving: 'يحفظ…',
-      error: `تعذّر الحفظ: ${saveError.value} ستُعاد المحاولة.`,
-      conflict: saveError.value,
-    })[saveState.value],
-)
+const online = ref(navigator.onLine)
+const saveLabel = computed(() => {
+  if (!online.value && saveState.value !== 'saved') return 'لا يوجد اتصال: النص محفوظ على هذا الجهاز وسيُرفع عند عودة الاتصال.'
+  return {
+    saved: 'حُفظ',
+    dirty: 'تغييرات لم تُحفظ بعد',
+    saving: 'يحفظ…',
+    error: `تعذّر الحفظ: ${saveError.value} النص محفوظ على هذا الجهاز وستُعاد المحاولة.`,
+    conflict: `${saveError.value} نسختك محفوظة على هذا الجهاز وستُعرض عليك بعد إعادة التحميل.`,
+  }[saveState.value]
+})
+
+// A copy of unsaved work in this browser (see lib/localDraft): written shortly after each change, removed once the
+// server has the same text. A conflict keeps it, so reloading offers it back instead of losing it.
+let localTimer: number | undefined
+function keepLocalCopy(): void {
+  window.clearTimeout(localTimer)
+  localTimer = window.setTimeout(() => {
+    if (!editor.value) return
+    writeLocalDraft(props.id, { baseVersion: version, title: title.value.trim() || null, content: editor.value.getJSON(), savedAt: Date.now() })
+  }, 400)
+}
 
 function markDirty(): void {
+  keepLocalCopy()
   if (saveState.value === 'conflict') return
   if (saveState.value === 'saving') {
     changedWhileSaving = true
@@ -359,6 +374,14 @@ function markDirty(): void {
   saveState.value = 'dirty'
   window.clearTimeout(saveTimer)
   saveTimer = window.setTimeout(() => void save(), 1500)
+}
+
+function onOnline(): void {
+  online.value = true
+  if (saveState.value === 'dirty' || saveState.value === 'error') void save()
+}
+function onOffline(): void {
+  online.value = false
 }
 
 async function save(): Promise<boolean> {
@@ -375,6 +398,10 @@ async function save(): Promise<boolean> {
     transcript.value = { ...data, asr: transcript.value?.asr ?? data.asr }
     saveState.value = 'saved'
     if (changedWhileSaving) markDirty()
+    else {
+      window.clearTimeout(localTimer)
+      clearLocalDraft(props.id)
+    }
     return true
   } catch (error) {
     if (error instanceof AxiosError && error.response?.status === 409) {
@@ -390,7 +417,11 @@ async function save(): Promise<boolean> {
 }
 
 function warnBeforeLeaving(event: BeforeUnloadEvent): void {
-  if (saveState.value !== 'saved') event.preventDefault()
+  if (saveState.value === 'saved') return
+  // The tab is closing: write the local copy now instead of waiting for its timer.
+  window.clearTimeout(localTimer)
+  if (editor.value) writeLocalDraft(props.id, { baseVersion: version, title: title.value.trim() || null, content: editor.value.getJSON(), savedAt: Date.now() })
+  event.preventDefault()
 }
 
 onBeforeRouteLeave(async () => {
@@ -414,9 +445,129 @@ async function load(): Promise<void> {
     await loadDictionary()
     refreshIssues()
     ready = true
+    offerLocalCopy(transcriptResponse.data)
     if (transcriptResponse.data.asr.status === 'queued' || transcriptResponse.data.asr.status === 'running') startPolling()
   } catch (error) {
     loadError.value = errorMessage(error, 'تعذّر فتح الملف.')
+  }
+}
+
+// --- unsaved work found in this browser --------------------------------------------------------------------
+const localCopy = ref<LocalDraft | null>(null)
+const localCopyWords = computed(() => wordsOf(localCopy.value?.content as EditorDoc | null))
+
+function wordsOf(node: EditorNode | null | undefined): number {
+  if (!node) return 0
+  const own = node.text ? node.text.split(/\s+/u).filter(Boolean).length : 0
+  return own + (node.content ?? []).reduce((sum, child) => sum + wordsOf(child), 0)
+}
+
+function putContent(doc: EditorDoc | null, newTitle: string | null): void {
+  ready = false
+  editor.value?.commands.setContent(doc ?? '', { emitUpdate: false })
+  if (newTitle) title.value = newTitle
+  refreshUnclear()
+  refreshIssues()
+  ready = true
+}
+
+function offerLocalCopy(server: Transcript): void {
+  const draft = readLocalDraft(props.id)
+  const decision = draftDecision(draft, server)
+  if (decision === 'none') {
+    if (draft) clearLocalDraft(props.id)
+    return
+  }
+  if (decision === 'resume') {
+    putContent(draft!.content as EditorDoc, draft!.title)
+    notice.value = 'استُعيدت تغييرات لم تكن قد وصلت إلى الخادم (محفوظة على هذا الجهاز)، وستُحفظ الآن.'
+    markDirty()
+    return
+  }
+  localCopy.value = draft
+}
+
+function useLocalCopy(): void {
+  const draft = localCopy.value
+  localCopy.value = null
+  if (!draft) return
+  // The server's newer text is not lost: it stays in the history (السجل) and can be brought back from there.
+  putContent(draft.content as EditorDoc, draft.title)
+  markDirty()
+}
+
+function discardLocalCopy(): void {
+  localCopy.value = null
+  clearLocalDraft(props.id)
+}
+
+// --- history (versions) ------------------------------------------------------------------------------------
+const historyOpen = ref(false)
+const historyLoading = ref(false)
+const historyError = ref('')
+const versions = ref<TranscriptVersionSummary[]>([])
+const selectedVersion = ref<TranscriptVersionDetail | null>(null)
+const restoring = ref(false)
+const REASON_LABEL: Record<TranscriptVersionSummary['reason'], string> = {
+  edit: 'تعديل',
+  restore: 'قبل الاسترجاع',
+  restored: 'بعد الاسترجاع',
+}
+
+function formatWhen(iso: string): string {
+  return new Intl.DateTimeFormat('ar', { dateStyle: 'medium', timeStyle: 'short', numberingSystem: 'latn' }).format(new Date(iso))
+}
+
+async function openHistory(): Promise<void> {
+  historyOpen.value = true
+  historyError.value = ''
+  selectedVersion.value = null
+  historyLoading.value = true
+  // The newest work should be in the list too.
+  if (saveState.value === 'dirty' || saveState.value === 'error') await save()
+  try {
+    const { data } = await http.get<{ data: TranscriptVersionSummary[] }>(`${url.value}/versions`)
+    versions.value = data.data
+  } catch (error) {
+    historyError.value = errorMessage(error, 'تعذّر تحميل السجل.')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function previewVersion(id: number): Promise<void> {
+  historyError.value = ''
+  try {
+    const { data } = await http.get<{ data: TranscriptVersionDetail }>(`${url.value}/versions/${id}`)
+    selectedVersion.value = data.data
+  } catch (error) {
+    historyError.value = errorMessage(error, 'تعذّر فتح هذه النسخة.')
+  }
+}
+
+async function restoreVersion(): Promise<void> {
+  const chosen = selectedVersion.value
+  if (!chosen || restoring.value) return
+  if (saveState.value !== 'saved' && !(await save())) {
+    historyError.value = 'احفظ التغييرات الحالية أولًا (أو أعد تحميل الصفحة) ثم أعد المحاولة.'
+    return
+  }
+  restoring.value = true
+  try {
+    const { data } = await http.post<{ data: { version: number; title: string | null; content: EditorDoc | null } }>(
+      `${url.value}/versions/${chosen.id}/restore`,
+      { version },
+    )
+    version = data.data.version
+    putContent(data.data.content, data.data.title)
+    clearLocalDraft(props.id)
+    saveState.value = 'saved'
+    historyOpen.value = false
+    notice.value = `استُرجعت نسخة ${formatWhen(chosen.updated_at)}. النص الذي كان قبلها محفوظ في السجل.`
+  } catch (error) {
+    historyError.value = errorMessage(error, 'تعذّر الاسترجاع.')
+  } finally {
+    restoring.value = false
   }
 }
 
@@ -722,6 +873,8 @@ function onResizeKey(event: KeyboardEvent): void {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown, true)
   window.addEventListener('beforeunload', warnBeforeLeaving)
+  window.addEventListener('online', onOnline)
+  window.addEventListener('offline', onOffline)
   setTypingCorrection(typingCorrection.value)
   void load()
 })
@@ -729,7 +882,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown, true)
   window.removeEventListener('beforeunload', warnBeforeLeaving)
+  window.removeEventListener('online', onOnline)
+  window.removeEventListener('offline', onOffline)
   window.clearTimeout(saveTimer)
+  window.clearTimeout(localTimer)
   window.clearInterval(pollTimer)
 })
 </script>
@@ -762,6 +918,10 @@ onBeforeUnmount(() => {
         <span class="max-sm:hidden">{{ saveLabel }}</span>
         <button v-if="saveState === 'conflict'" class="underline" @click="reload">إعادة التحميل</button>
       </span>
+      <button class="btn-secondary shrink-0 px-3 py-1.5" title="النسخ السابقة من هذا التفريغ واسترجاع أيٍّ منها" @click="openHistory">
+        <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>
+        <span class="max-sm:hidden">السجل</span>
+      </button>
       <button
         class="btn-primary shrink-0 px-3 py-1.5"
         :disabled="exporting"
@@ -1027,6 +1187,60 @@ onBeforeUnmount(() => {
         </footer>
       </section>
     </div>
+
+    <AppModal :open="localCopy !== null" title="تغييرات غير محفوظة على هذا الجهاز" @close="localCopy = null">
+      <div class="space-y-4 text-sm">
+        <p>
+          وُجدت على هذا الجهاز نسخة من عملك ({{ localCopyWords }} كلمة، {{ localCopy ? formatWhen(new Date(localCopy.savedAt).toISOString()) : '' }}) لم تصل إلى الخادم،
+          وحُفظت بعدها نسخة أحدث على الخادم{{ transcript?.updated_by ? ` بواسطة ${transcript.updated_by.name}` : '' }}.
+        </p>
+        <p class="text-slate-600">إن اخترت نسختك فلن تضيع نسخة الخادم: تبقى في «السجل» ويمكن استرجاعها.</p>
+        <div class="flex flex-wrap justify-end gap-2">
+          <button class="btn-secondary" @click="discardLocalCopy">تجاهل نسختي</button>
+          <button class="btn-primary" @click="useLocalCopy">استخدام نسختي</button>
+        </div>
+      </div>
+    </AppModal>
+
+    <AppModal :open="historyOpen" title="سجل النسخ" wide @close="historyOpen = false">
+      <p v-if="historyError" class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ historyError }}</p>
+      <p v-if="historyLoading" class="text-sm text-slate-500">يحمّل…</p>
+      <p v-else-if="versions.length === 0" class="text-sm text-slate-500">لا توجد نسخ بعد: تُحفظ نسخة كل عشر دقائق من العمل.</p>
+      <div v-else class="grid gap-4 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+        <ul class="max-h-[60vh] space-y-1 overflow-y-auto" aria-label="النسخ">
+          <li v-for="v in versions" :key="v.id">
+            <button
+              class="w-full rounded-lg px-3 py-2 text-start text-sm hover:bg-slate-100"
+              :class="{ 'bg-brand-50 ring-1 ring-brand-200': selectedVersion?.id === v.id }"
+              @click="previewVersion(v.id)"
+            >
+              <span class="block font-medium tabular">{{ formatWhen(v.updated_at) }}</span>
+              <span class="block text-xs text-slate-500">
+                {{ v.author?.name ?? '—' }} · <span class="tabular">{{ v.words }}</span> كلمة · {{ REASON_LABEL[v.reason] }}
+              </span>
+            </button>
+          </li>
+        </ul>
+        <div class="min-w-0">
+          <p v-if="!selectedVersion" class="text-sm text-slate-500">اختر نسخة لمعاينتها.</p>
+          <template v-else>
+            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p class="text-sm text-slate-600">
+                {{ selectedVersion.title || 'بلا عنوان' }} · <span class="tabular">{{ selectedVersion.words }}</span> كلمة
+                (الحالي <span class="tabular">{{ words }}</span>)
+              </p>
+              <button class="btn-primary px-3 py-1.5" :disabled="restoring" @click="restoreVersion">
+                {{ restoring ? 'يسترجع…' : 'استرجاع هذه النسخة' }}
+              </button>
+            </div>
+            <div class="max-h-[52vh] space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-sm leading-7">
+              <p v-for="(p, i) in selectedVersion.paragraphs" :key="i">{{ p }}</p>
+              <p v-if="selectedVersion.paragraphs.length === 0" class="text-slate-500">نسخة فارغة.</p>
+            </div>
+          </template>
+        </div>
+      </div>
+    </AppModal>
 
     <AppModal :open="ruleDialog" title="إضافة إلى قاموس التدقيق" @close="ruleDialog = false">
       <RuleForm v-if="ruleDialog" :key="ruleKey" :initial="ruleInitial" :sample="ruleSample" @saved="onRuleSaved" @cancel="ruleDialog = false" />

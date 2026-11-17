@@ -79,6 +79,23 @@ export interface EditorDoc extends EditorNode {
   type: 'doc'
 }
 
+/** One snapshot in a transcript's history (edit = while working; restore/restored = around a restore). */
+export interface TranscriptVersionSummary {
+  id: number
+  version: number
+  reason: 'edit' | 'restore' | 'restored'
+  title: string | null
+  words: number
+  author: { id: number; name: string } | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TranscriptVersionDetail extends TranscriptVersionSummary {
+  content: EditorDoc | null
+  paragraphs: string[]
+}
+
 export interface Transcript {
   audio_file_id: number
   title: string | null

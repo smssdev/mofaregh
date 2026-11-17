@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 
-const props = defineProps<{ open: boolean; title: string }>()
+const props = defineProps<{ open: boolean; title: string; wide?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 
@@ -18,7 +18,8 @@ onMounted(sync)
 <template>
   <dialog
     ref="dialog"
-    class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-slate-200 p-0 shadow-xl backdrop:bg-slate-900/40"
+    class="m-auto rounded-xl border border-slate-200 p-0 shadow-xl backdrop:bg-slate-900/40"
+    :class="wide ? 'w-[min(56rem,calc(100vw-2rem))]' : 'w-[min(32rem,calc(100vw-2rem))]'"
     @close="emit('close')"
     @cancel.prevent="emit('close')"
   >
